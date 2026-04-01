@@ -1,0 +1,525 @@
+{
+ "actions": [],
+ "allow_import": 1,
+ "allow_rename": 1,
+ "autoname": "format:BENE-{YYYY}-{MM}-{#####}",
+ "creation": "2022-10-13 12:42:02.875677",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "personal_information_section",
+  "first_name",
+  "last_name",
+  "full_name",
+  "column_break_3",
+  "phone_number",
+  "gender",
+  "age",
+  "column_break_4",
+  "religion",
+  "social_category",
+  "languages_known",
+  "location_section",
+  "state",
+  "district",
+  "zone",
+  "ward",
+  "habitation",
+  "identity_section",
+  "is_identity_proof_available",
+  "column_break_17",
+  "section_break_glmz",
+  "identity_proofs",
+  "health_section",
+  "disability_condition",
+  "column_break_24",
+  "chronic_illness",
+  "other_chronic_illness",
+  "point_of_contact_section",
+  "poc_name",
+  "column_break_23",
+  "poc_phone",
+  "image",
+  "family_information_section",
+  "marital_status",
+  "spouses_name",
+  "column_break_31",
+  "fathers_name",
+  "native_place_section",
+  "native_state",
+  "column_break_iefk",
+  "native_district",
+  "section_break_myup",
+  "native_full_address",
+  "education_section",
+  "education_level",
+  "is_employeed",
+  "column_break_40",
+  "employment_type",
+  "other_employment_type",
+  "section_break_vzck",
+  "created_by",
+  "section_break_uwdz",
+  "bottom_save_button"
+ ],
+ "fields": [
+  {
+   "fieldname": "state",
+   "fieldtype": "Link",
+   "label": "State",
+   "options": "State"
+  },
+  {
+   "fieldname": "district",
+   "fieldtype": "Link",
+   "label": "City/District",
+   "options": "District"
+  },
+  {
+   "fieldname": "zone",
+   "fieldtype": "Link",
+   "label": "Zone/Block",
+   "options": "Zone"
+  },
+  {
+   "fieldname": "ward",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Ward/GP",
+   "length": 600,
+   "options": "Ward"
+  },
+  {
+   "fieldname": "habitation",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Hotspot Name/Habitation",
+   "options": "Habitation"
+  },
+  {
+   "fieldname": "religion",
+   "fieldtype": "Link",
+   "label": "Religion",
+   "options": "Religion"
+  },
+  {
+   "fieldname": "disability_condition",
+   "fieldtype": "Link",
+   "label": "Disability Condition",
+   "options": "Disability Condition"
+  },
+  {
+   "default": "No",
+   "fieldname": "is_identity_proof_available",
+   "fieldtype": "Select",
+   "label": "Is Identitity Proof Available?",
+   "options": "Yes\nNo\nCan't Say"
+  },
+  {
+   "depends_on": "eval:doc.is_identity_proof_available==\"Yes\"",
+   "fieldname": "identity_proofs",
+   "fieldtype": "Table",
+   "label": "Identity Proofs",
+   "options": "Identity Proof Type"
+  },
+  {
+   "fieldname": "first_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "First Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "last_name",
+   "fieldtype": "Data",
+   "label": "Last Name"
+  },
+  {
+   "fieldname": "personal_information_section",
+   "fieldtype": "Section Break",
+   "label": "Personal Information"
+  },
+  {
+   "fieldname": "column_break_4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "location_section",
+   "fieldtype": "Section Break",
+   "label": "Location"
+  },
+  {
+   "fieldname": "health_section",
+   "fieldtype": "Section Break",
+   "label": "Health"
+  },
+  {
+   "fieldname": "identity_section",
+   "fieldtype": "Section Break",
+   "label": "Identity"
+  },
+  {
+   "fieldname": "column_break_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_17",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "point_of_contact_section",
+   "fieldtype": "Section Break",
+   "label": "Point Of Contact"
+  },
+  {
+   "fieldname": "poc_name",
+   "fieldtype": "Data",
+   "label": "POC Name"
+  },
+  {
+   "fieldname": "column_break_23",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "poc_phone",
+   "fieldtype": "Data",
+   "label": "POC Phone",
+   "options": "Phone"
+  },
+  {
+   "allow_in_quick_entry": 1,
+   "fieldname": "age",
+   "fieldtype": "Int",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Age",
+   "non_negative": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "gender",
+   "fieldtype": "Link",
+   "label": "Gender",
+   "options": "Gender",
+   "reqd": 1
+  },
+  {
+   "default": "Unknown",
+   "fieldname": "marital_status",
+   "fieldtype": "Select",
+   "label": "Marital Status",
+   "options": "Unknown\nUnmarried\nMarried\nDivorced\nSeparated\nWidowed"
+  },
+  {
+   "fieldname": "image",
+   "fieldtype": "Attach Image",
+   "hidden": 1,
+   "label": "Image"
+  },
+  {
+   "fieldname": "family_information_section",
+   "fieldtype": "Section Break",
+   "label": "Family Information"
+  },
+  {
+   "fieldname": "fathers_name",
+   "fieldtype": "Data",
+   "label": "Father's Name"
+  },
+  {
+   "fieldname": "column_break_31",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.marital_status==\"Married\"",
+   "fieldname": "spouses_name",
+   "fieldtype": "Data",
+   "label": "Spouse's Name"
+  },
+  {
+   "default": "Unknown",
+   "fieldname": "social_category",
+   "fieldtype": "Select",
+   "label": "Social Category",
+   "options": "SC\nST\nOBC\nGeneral\nUnknown"
+  },
+  {
+   "fieldname": "column_break_24",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "None",
+   "fieldname": "chronic_illness",
+   "fieldtype": "Select",
+   "label": "Chronic Illness",
+   "options": "None\nTB\nAsthma\nHIV\nCancer\nOther"
+  },
+  {
+   "depends_on": "eval:doc.chronic_illness==\"Other\"",
+   "fieldname": "other_chronic_illness",
+   "fieldtype": "Data",
+   "label": "Please Specify",
+   "mandatory_depends_on": "eval:doc.chronic_illness==\"Other\""
+  },
+  {
+   "fieldname": "education_section",
+   "fieldtype": "Section Break",
+   "label": "Education & Employment"
+  },
+  {
+   "fieldname": "education_level",
+   "fieldtype": "Link",
+   "label": "Education Level",
+   "options": "Education Level"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_employeed",
+   "fieldtype": "Check",
+   "label": "Is Employeed?"
+  },
+  {
+   "depends_on": "eval:doc.is_employeed",
+   "fieldname": "employment_type",
+   "fieldtype": "Select",
+   "label": "Employment Type",
+   "options": "\nLabor\nHospitality\nRestaurants\nHousework\nBegging\nOther"
+  },
+  {
+   "depends_on": "eval:doc.is_employeed==1&&doc.employment_type==\"Other\"",
+   "fieldname": "other_employment_type",
+   "fieldtype": "Data",
+   "label": "Please Specify",
+   "mandatory_depends_on": "eval:doc.is_employeed==1&&doc.employment_type==\"Other\""
+  },
+  {
+   "fieldname": "column_break_40",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "phone_number",
+   "fieldtype": "Data",
+   "label": "Phone Number",
+   "options": "Phone"
+  },
+  {
+   "fieldname": "section_break_glmz",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "native_place_section",
+   "fieldtype": "Section Break",
+   "label": "Native Place"
+  },
+  {
+   "fieldname": "native_state",
+   "fieldtype": "Link",
+   "label": "State",
+   "options": "State"
+  },
+  {
+   "fieldname": "column_break_iefk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "native_district",
+   "fieldtype": "Link",
+   "label": "District",
+   "options": "District"
+  },
+  {
+   "fieldname": "section_break_myup",
+   "fieldtype": "Section Break"
+  },
+  {
+   "description": "Include block, GP, village or any other identifier info",
+   "fieldname": "native_full_address",
+   "fieldtype": "Small Text",
+   "label": "Full Address"
+  },
+  {
+   "fieldname": "section_break_uwdz",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "bottom_save_button",
+   "fieldtype": "Button",
+   "label": "Save"
+  },
+  {
+   "fieldname": "languages_known",
+   "fieldtype": "Table MultiSelect",
+   "label": "Languages Known",
+   "options": "Language Multiselect"
+  },
+  {
+   "fieldname": "section_break_vzck",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "created_by",
+   "fieldtype": "Data",
+   "label": "Created By",
+   "read_only": 1
+  },
+  {
+   "fieldname": "full_name",
+   "fieldtype": "Data",
+   "label": "Full Name"
+  }
+ ],
+ "image_field": "image",
+ "index_web_pages_for_search": 1,
+ "links": [
+  {
+   "group": "General",
+   "link_doctype": "Daily Visit Update",
+   "link_fieldname": "beneficiary"
+  },
+  {
+   "group": "General",
+   "link_doctype": "Entitlement Request",
+   "link_fieldname": "beneficiary"
+  },
+  {
+   "group": "Health",
+   "link_doctype": "Hospitalisation Record",
+   "link_fieldname": "beneficiary"
+  },
+  {
+   "group": "Health",
+   "link_doctype": "Health Camp Record",
+   "link_fieldname": "beneficiary"
+  }
+ ],
+ "modified": "2023-09-06 21:25:52.624848",
+ "modified_by": "Administrator",
+ "module": "Frappe Changemakers",
+ "name": "Beneficiary",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "import": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "import": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Partner SMT",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Admin (Partner)",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Social Worker",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Program Manager",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Healthcare Team Member",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "SMT(NGO)-Field Co-ordinator",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Medical Co-ordinator",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Learning Centre POC",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "quick_entry": 1,
+ "search_fields": "age,zone,ward,habitation",
+ "show_title_field_in_link": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "first_name",
+ "track_changes": 1
+}

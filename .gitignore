@@ -1,0 +1,16 @@
+.DS_Store
+*.pyc
+*.egg-info
+*.swp
+tags
+changemakers/docs/current
+changemakers/public/node_modules
+changemakers/public/frontend
+changemakers/www/c.html
+node_modules/
+build
+frontend/frappe-ui
+/test-results/
+/playwright-report/
+/playwright/.cache/
+__pycache__/
