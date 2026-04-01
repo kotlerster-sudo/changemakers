@@ -23,8 +23,8 @@ def get_daily_workplan():
             households = frappe.get_all("Household Profile-WRP", filters={"street_name": ["in", assigned_streets]}, fields=["name", "street_name", "cmchis_status", "respondent"])
             hh_map = {str(h.name): h for h in households}
             
-            # Fetching contact_number for the Household Summary Screen
-            individuals = frappe.get_all("Individual Profile-WRP", filters={"hhid": ["in", list(hh_map.keys())]}, fields=["name", "name_of_the_individual", "hhid", "aadhaar_status", "income_status", "visit_count", "last_visited_at", "contact_number"])
+            # UPDATED: Fetching contact_number AND notes for the Household Summary Screen
+            individuals = frappe.get_all("Individual Profile-WRP", filters={"hhid": ["in", list(hh_map.keys())]}, fields=["name", "name_of_the_individual", "hhid", "aadhaar_status", "income_status", "visit_count", "last_visited_at", "contact_number", "notes"])
             today_date = frappe.utils.getdate(frappe.utils.nowdate())
             today_str = str(frappe.utils.nowdate())
             
@@ -57,12 +57,14 @@ def get_daily_workplan():
                     elif '4d' in i_stat and frappe.utils.date_diff(today_date, lv_date) >= 4: is_due = True
                     elif '5d' in current_hh["cmchis_status"] and frappe.utils.date_diff(today_date, lv_date) >= 5: is_due = True
 
+                # UPDATED: Added notes to the dictionary sent to Flutter
                 current_hh["members"].append({
                     "id": str(ind.get("name")), 
                     "head_name": str(ind.get("name_of_the_individual") or "Unknown"), 
                     "hhid": hid, "aadhaar_status": a_stat, "income_status": i_stat, 
                     "cmchis_status": current_hh["cmchis_status"], "visit_count": vc,
-                    "contact_number": str(ind.get("contact_number") or "")
+                    "contact_number": str(ind.get("contact_number") or ""),
+                    "notes": str(ind.get("notes") or "")
                 })
                 if vc > current_hh["max_visits"]: current_hh["max_visits"] = vc
                 if is_due: current_hh["has_sla_due"] = True
@@ -183,10 +185,11 @@ def get_co_household_list():
     households = frappe.get_all("Household Profile-WRP", filters={"street_name": ["in", assigned_streets]}, fields=["name", "street_name", "cmchis_status"])
     hh_map = {h.name: h for h in households}
     
+    # UPDATED: Added notes to fields list
     individuals = frappe.get_all(
         "Individual Profile-WRP",
         filters=[["hhid", "in", list(hh_map.keys())], ["visit_count", ">", 0]],
-        fields=["name", "name_of_the_individual", "hhid", "aadhaar_status", "income_status", "last_visited_at", "phone", "last_update_summary", "visit_count", "esm_username", "contact_number"],
+        fields=["name", "name_of_the_individual", "hhid", "aadhaar_status", "income_status", "last_visited_at", "phone", "last_update_summary", "visit_count", "esm_username", "contact_number", "notes"],
         order_by="modified desc", limit=50
     )
     
@@ -207,6 +210,7 @@ def get_co_household_list():
             "aadhaar_status": ind.get("aadhaar_status"), "income_status": ind.get("income_status"),
             "last_visited_at": ind.get("last_visited_at"), "contact_number": ind.get("contact_number"),
             "last_update_summary": ind.get("last_update_summary"), "visit_count": ind.get("visit_count"),
+            "notes": str(ind.get("notes") or ""), # UPDATED: Added notes to mapping
             "document_vault": doc_map.get(ind.name, [])
         })
     return history_feed
