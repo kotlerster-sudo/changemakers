@@ -9,10 +9,6 @@ description = "Mobile API for Changemakers"
 authors = [
     {name = "Arunodhaya"}
 ]
-# This line tells Frappe Cloud this app works with Frappe v15
-dependencies = [
-    "frappe>=15.0.0,<16.0.0"
-]
 
 [tool.flit.module]
 name = "changemakers"
