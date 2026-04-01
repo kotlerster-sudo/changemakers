@@ -5,6 +5,7 @@ app_description = "Empowering the people that do good."
 app_email = "co5cwrparunodhaya@gmail.com"
 app_license = "AGPL"
 app_version = "0.0.1"  # Hardcoded for Frappe Cloud compatibility
+required_frappe_version = ">=15.0.0 <16.0.0"
 
 fixtures = [
     "Custom HTML Block",
