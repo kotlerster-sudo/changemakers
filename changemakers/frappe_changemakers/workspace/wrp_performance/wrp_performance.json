@@ -1,0 +1,34 @@
+{
+ "charts": [],
+ "content": "[{\"id\":\"wrp_perf_h1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">WRP Performance</span>\",\"col\":12}},{\"id\":\"wrp_perf_p1\",\"type\":\"paragraph\",\"data\":{\"text\":\"Track CO-wise CMCHIS completion across Intervention Units and Streets.\",\"col\":12}},{\"id\":\"wrp_perf_s1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"CO CMCHIS Performance\",\"col\":4}}]",
+ "creation": "2026-04-03 00:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "bar-chart",
+ "idx": 0,
+ "is_hidden": 0,
+ "label": "WRP Performance",
+ "links": [],
+ "modified": "2026-04-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Changemakers",
+ "name": "WRP Performance",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "roles": [],
+ "sequence_id": 10.0,
+ "shortcuts": [
+  {
+   "color": "Blue",
+   "label": "CO CMCHIS Performance",
+   "link_to": "CO CMCHIS Performance",
+   "type": "Report"
+  }
+ ]
+}
