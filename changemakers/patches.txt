@@ -1,3 +1,4 @@
 changemakers.patches.set_wrp_performance_workspace_parent
 changemakers.patches.fix_wrp_performance_workspace_v2
 changemakers.patches.fix_wrp_performance_workspace_v3
+changemakers.patches.clear_report_scripts
