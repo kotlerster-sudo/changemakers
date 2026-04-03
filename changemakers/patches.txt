@@ -3,3 +3,4 @@ changemakers.patches.fix_wrp_performance_workspace_v2
 changemakers.patches.fix_wrp_performance_workspace_v3
 changemakers.patches.clear_report_scripts
 changemakers.patches.add_daily_coverage_shortcut
+changemakers.patches.add_pipeline_dashboard_shortcut
