@@ -1,0 +1,119 @@
+{
+ "add_total_row": 0,
+ "columns": [
+  {
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "label": "CO / Household",
+   "width": 220
+  },
+  {
+   "fieldname": "intervention_unit",
+   "fieldtype": "Data",
+   "label": "Intervention Unit",
+   "width": 150
+  },
+  {
+   "fieldname": "street",
+   "fieldtype": "Data",
+   "label": "Street",
+   "width": 140
+  },
+  {
+   "fieldname": "visited",
+   "fieldtype": "Int",
+   "label": "Visited",
+   "width": 80
+  },
+  {
+   "fieldname": "target",
+   "fieldtype": "Int",
+   "label": "Target",
+   "width": 70
+  },
+  {
+   "fieldname": "coverage_pct",
+   "fieldtype": "Percent",
+   "label": "Coverage %",
+   "width": 105
+  },
+  {
+   "fieldname": "first_visits",
+   "fieldtype": "Int",
+   "label": "First Visits",
+   "width": 95
+  },
+  {
+   "fieldname": "doc_followups",
+   "fieldtype": "Int",
+   "label": "Doc Follow-ups",
+   "width": 115
+  },
+  {
+   "fieldname": "regular_followups",
+   "fieldtype": "Int",
+   "label": "Regular Follow-ups",
+   "width": 130
+  },
+  {
+   "fieldname": "stage",
+   "fieldtype": "Data",
+   "label": "Stage",
+   "width": 180
+  }
+ ],
+ "creation": "2026-04-03 00:00:00.000000",
+ "disabled": 0,
+ "docstatus": 0,
+ "doctype": "Report",
+ "filters": [
+  {
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "label": "Date",
+   "mandatory": 1,
+   "wildcard_filter": 0
+  },
+  {
+   "fieldname": "intervention_unit",
+   "fieldtype": "Link",
+   "label": "Intervention Unit",
+   "mandatory": 0,
+   "options": "Intervention Units-WRP",
+   "wildcard_filter": 0
+  },
+  {
+   "fieldname": "street",
+   "fieldtype": "Link",
+   "label": "Street",
+   "mandatory": 0,
+   "options": "Street List  - WRP",
+   "wildcard_filter": 0
+  }
+ ],
+ "idx": 0,
+ "is_standard": "Yes",
+ "modified": "2026-04-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Changemakers",
+ "name": "CO Daily Coverage",
+ "owner": "Administrator",
+ "prepared_report": 0,
+ "ref_doctype": "Individual Profile-WRP",
+ "report_name": "CO Daily Coverage",
+ "report_type": "Script Report",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Admin (Partner)"
+  },
+  {
+   "role": "Program Manager"
+  },
+  {
+   "role": "Partner SMT"
+  }
+ ]
+}
