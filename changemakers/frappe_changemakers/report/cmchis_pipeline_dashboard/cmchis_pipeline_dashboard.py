@@ -21,6 +21,27 @@ def _bucket(visit_count, aadhaar_status, income_status, hh_cmchis):
     return "no_update"
 
 
+def _doc_gap(visit_count, aadhaar_status, income_status, hh_cmchis):
+    """Return doc-gap sub-bucket for visited individuals not yet in pipeline.
+    Returns None for unvisited / applied / active / rejected."""
+    c = (hh_cmchis or "").lower()
+    if "active" in c or "rejected" in c:
+        return None
+    if "applied" in c and "not" not in c:
+        return None
+    if int(visit_count or 0) == 0:
+        return None
+    has_a = "Received" in (aadhaar_status or "")
+    has_i = "Received" in (income_status or "")
+    if has_a and has_i:
+        return None          # documented / ready to apply — no gap
+    if not has_a and not has_i:
+        return "both_missing"
+    if not has_a:
+        return "no_aadhaar"  # has income, needs aadhaar
+    return "no_income"       # has aadhaar, needs income cert
+
+
 def _bucket_label(bucket):
     return {
         "reach_gap":  "Reach Gap (Unvisited)",
@@ -42,17 +63,20 @@ def execute(filters=None):
 
 def get_columns():
     return [
-        {"fieldname": "label",      "label": "Group / Individual", "fieldtype": "Data",    "width": 230},
-        {"fieldname": "total",      "label": "Total",              "fieldtype": "Int",     "width": 70},
-        {"fieldname": "reach_gap",  "label": "Reach Gap",          "fieldtype": "Int",     "width": 95},
-        {"fieldname": "no_update",  "label": "No Update",          "fieldtype": "Int",     "width": 90},
-        {"fieldname": "documented", "label": "Ready to Apply",      "fieldtype": "Int",     "width": 115},
-        {"fieldname": "applied",    "label": "Applied",            "fieldtype": "Int",     "width": 80},
-        {"fieldname": "active",     "label": "Active",             "fieldtype": "Int",     "width": 75},
-        {"fieldname": "rejected",   "label": "Rejected",           "fieldtype": "Int",     "width": 80},
-        {"fieldname": "pct_active", "label": "% Active",           "fieldtype": "Percent", "width": 95},
-        {"fieldname": "sub_label",  "label": "ID / Reference",     "fieldtype": "Data",    "width": 160},
-        {"fieldname": "stage",      "label": "Stage",              "fieldtype": "Data",    "width": 190},
+        {"fieldname": "label",        "label": "Group / Individual", "fieldtype": "Data",    "width": 230},
+        {"fieldname": "total",        "label": "Total",              "fieldtype": "Int",     "width": 70},
+        {"fieldname": "reach_gap",    "label": "Reach Gap",          "fieldtype": "Int",     "width": 95},
+        {"fieldname": "no_update",    "label": "No Update",          "fieldtype": "Int",     "width": 90},
+        {"fieldname": "both_missing", "label": "Both Docs Missing",  "fieldtype": "Int",     "width": 130},
+        {"fieldname": "no_aadhaar",   "label": "Aadhaar Missing",    "fieldtype": "Int",     "width": 120},
+        {"fieldname": "no_income",    "label": "Income Cert Missing","fieldtype": "Int",     "width": 135},
+        {"fieldname": "documented",   "label": "Ready to Apply",     "fieldtype": "Int",     "width": 115},
+        {"fieldname": "applied",      "label": "Applied",            "fieldtype": "Int",     "width": 80},
+        {"fieldname": "active",       "label": "Active",             "fieldtype": "Int",     "width": 75},
+        {"fieldname": "rejected",     "label": "Rejected",           "fieldtype": "Int",     "width": 80},
+        {"fieldname": "pct_active",   "label": "% Active",           "fieldtype": "Percent", "width": 95},
+        {"fieldname": "sub_label",    "label": "ID / Reference",     "fieldtype": "Data",    "width": 160},
+        {"fieldname": "stage",        "label": "Stage",              "fieldtype": "Data",    "width": 190},
     ]
 
 
@@ -131,17 +155,16 @@ def get_data(filters, group_by):
             return r.get("iu_id") or "Unknown", r.get("iu_label") or r.get("iu_id") or "Unknown"
         if group_by == "Street":
             return r.get("street_label") or "Unknown", r.get("street_label") or "Unknown"
-        # Implementing Org
         v = r.get("iu_org") or r.get("street_org") or "Unknown"
         return v, v
 
-    # Aggregate
     groups = {}
     group_order = []
 
     for r in rows:
         gkey, glabel = _group_key(r)
         bucket = _bucket(r.visit_count, r.aadhaar_status, r.income_status, r.hh_cmchis)
+        gap    = _doc_gap(r.visit_count, r.aadhaar_status, r.income_status, r.hh_cmchis)
 
         if gkey not in groups:
             groups[gkey] = {
@@ -149,6 +172,7 @@ def get_data(filters, group_by):
                 "total": 0,
                 "reach_gap": 0, "no_update": 0, "documented": 0,
                 "applied": 0, "active": 0, "rejected": 0,
+                "both_missing": 0, "no_aadhaar": 0, "no_income": 0,
                 "individuals": [],
             }
             group_order.append(gkey)
@@ -156,15 +180,18 @@ def get_data(filters, group_by):
         g = groups[gkey]
         g["total"] += 1
         g[bucket] += 1
+        if gap:
+            g[gap] += 1
+
         g["individuals"].append({
-            "name": r.get("ind_name") or r.get("hh_respondent") or str(r.get("ind_id")),
-            "ipid": r.get("ind_ipid") or str(r.get("ind_id")),
-            "hhid": r.get("hh_hhid") or "",
+            "name":   r.get("ind_name") or r.get("hh_respondent") or str(r.get("ind_id")),
+            "ipid":   r.get("ind_ipid") or str(r.get("ind_id")),
+            "hhid":   r.get("hh_hhid") or "",
             "street": r.get("street_label") or "",
             "bucket": bucket,
+            "gap":    gap,
         })
 
-    # Sort groups by active % descending
     group_order.sort(key=lambda k: -(groups[k]["active"] / max(groups[k]["total"], 1)))
 
     data = []
@@ -173,43 +200,56 @@ def get_data(filters, group_by):
         total = g["total"] or 1
         pct = round(g["active"] / total * 100, 1)
 
-        # Group summary row (indent 0, bold)
         data.append({
-            "label":      g["label"],
-            "total":      g["total"],
-            "reach_gap":  g["reach_gap"],
-            "no_update":  g["no_update"],
-            "documented": g["documented"],
-            "applied":    g["applied"],
-            "active":     g["active"],
-            "rejected":   g["rejected"],
-            "pct_active": pct,
-            "sub_label":  "",
-            "stage":      "",
-            "indent":     0,
-            "bold":       1,
+            "label":        g["label"],
+            "total":        g["total"],
+            "reach_gap":    g["reach_gap"],
+            "no_update":    g["no_update"],
+            "both_missing": g["both_missing"],
+            "no_aadhaar":   g["no_aadhaar"],
+            "no_income":    g["no_income"],
+            "documented":   g["documented"],
+            "applied":      g["applied"],
+            "active":       g["active"],
+            "rejected":     g["rejected"],
+            "pct_active":   pct,
+            "sub_label":    "",
+            "stage":        "",
+            "indent":       0,
+            "bold":         1,
         })
 
-        # Individual detail rows (indent 1) — sorted by bucket priority
         bucket_order = ["reach_gap", "no_update", "documented", "applied", "active", "rejected"]
         sorted_inds = sorted(g["individuals"], key=lambda x: bucket_order.index(x["bucket"]))
 
         for ind in sorted_inds:
-            ref = ind["ipid"] or ind["hhid"] or ""
+            # Stage label: for no_update rows show the doc gap detail
+            if ind["bucket"] == "no_update" and ind["gap"]:
+                stage_str = {
+                    "both_missing": "Both Docs Missing",
+                    "no_aadhaar":   "Aadhaar Missing",
+                    "no_income":    "Income Cert Missing",
+                }.get(ind["gap"], _bucket_label(ind["bucket"]))
+            else:
+                stage_str = _bucket_label(ind["bucket"])
+
             data.append({
-                "label":      ind["name"],
-                "total":      "",
-                "reach_gap":  "",
-                "no_update":  "",
-                "documented": "",
-                "applied":    "",
-                "active":     "",
-                "rejected":   "",
-                "pct_active": "",
-                "sub_label":  ref,
-                "stage":      _bucket_label(ind["bucket"]),
-                "indent":     1,
-                "bold":       0,
+                "label":        ind["name"],
+                "total":        "",
+                "reach_gap":    "",
+                "no_update":    "",
+                "both_missing": "",
+                "no_aadhaar":   "",
+                "no_income":    "",
+                "documented":   "",
+                "applied":      "",
+                "active":       "",
+                "rejected":     "",
+                "pct_active":   "",
+                "sub_label":    ind["ipid"] or ind["hhid"] or "",
+                "stage":        stage_str,
+                "indent":       1,
+                "bold":         0,
             })
 
     return data

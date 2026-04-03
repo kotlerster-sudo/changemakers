@@ -50,6 +50,9 @@ frappe.query_reports["CMCHIS Pipeline Dashboard"] = {
             var colors = {
                 "Reach Gap (Unvisited)":       "#999",
                 "No Update (Pending Docs)":    "#cc6600",
+                "Both Docs Missing":           "#cc6600",
+                "Aadhaar Missing":             "#e07000",
+                "Income Cert Missing":         "#e07000",
                 "Ready to Apply":              "#0070c0",
                 "Applied":                     "#7030a0",
                 "CMCHIS Active":               "green",
