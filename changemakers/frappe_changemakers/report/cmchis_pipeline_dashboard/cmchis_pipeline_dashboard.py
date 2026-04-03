@@ -25,7 +25,7 @@ def _bucket_label(bucket):
     return {
         "reach_gap":  "Reach Gap (Unvisited)",
         "no_update":  "No Update (Pending Docs)",
-        "documented": "Documented (Ready to Apply)",
+        "documented": "Ready to Apply",
         "applied":    "Applied",
         "active":     "CMCHIS Active",
         "rejected":   "Rejected",
@@ -46,7 +46,7 @@ def get_columns():
         {"fieldname": "total",      "label": "Total",              "fieldtype": "Int",     "width": 70},
         {"fieldname": "reach_gap",  "label": "Reach Gap",          "fieldtype": "Int",     "width": 95},
         {"fieldname": "no_update",  "label": "No Update",          "fieldtype": "Int",     "width": 90},
-        {"fieldname": "documented", "label": "Documented",         "fieldtype": "Int",     "width": 105},
+        {"fieldname": "documented", "label": "Ready to Apply",      "fieldtype": "Int",     "width": 115},
         {"fieldname": "applied",    "label": "Applied",            "fieldtype": "Int",     "width": 80},
         {"fieldname": "active",     "label": "Active",             "fieldtype": "Int",     "width": 75},
         {"fieldname": "rejected",   "label": "Rejected",           "fieldtype": "Int",     "width": 80},

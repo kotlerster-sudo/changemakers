@@ -5,7 +5,7 @@
   {"fieldname": "total",      "fieldtype": "Int",     "label": "Total",              "width": 70},
   {"fieldname": "reach_gap",  "fieldtype": "Int",     "label": "Reach Gap",          "width": 95},
   {"fieldname": "no_update",  "fieldtype": "Int",     "label": "No Update",          "width": 90},
-  {"fieldname": "documented", "fieldtype": "Int",     "label": "Documented",         "width": 105},
+  {"fieldname": "documented", "fieldtype": "Int",     "label": "Ready to Apply",         "width": 105},
   {"fieldname": "applied",    "fieldtype": "Int",     "label": "Applied",            "width": 80},
   {"fieldname": "active",     "fieldtype": "Int",     "label": "Active",             "width": 75},
   {"fieldname": "rejected",   "fieldtype": "Int",     "label": "Rejected",           "width": 80},
