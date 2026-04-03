@@ -64,9 +64,9 @@ def get_data(filters):
     staff_rows = frappe.get_all(
         "Staff details - WRP",
         filters={"name": ["in", co_ids]},
-        fields=["name", "staff_name"],
+        fields=["name", "full_name"],
     )
-    staff_name_map = {r["name"]: r["staff_name"] for r in staff_rows}
+    staff_name_map = {r["name"]: r["full_name"] for r in staff_rows}
 
     # Aggregate HH counts per street
     street_names = [s["street_name"] for s in streets]
