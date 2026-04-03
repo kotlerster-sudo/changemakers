@@ -122,8 +122,8 @@ def get_data(filters, group_by):
             ind.income_status,
             ind.last_visited_at,
             ind.creation,
-            ind.added_by_co,
-            ind.implementing_org  AS ind_org,
+            sl.added_by_co        AS street_co_id,
+            sl.implementing_org   AS street_org,
             hh.cmchis_status      AS hh_cmchis,
             hh.street_name        AS hh_street,
             sl.intervention_units AS iu_name,
@@ -142,7 +142,7 @@ def get_data(filters, group_by):
         LEFT JOIN `tabIntervention Units-WRP` iu
             ON iu.name = sl.intervention_units
         LEFT JOIN `tabStaff details - WRP` staff
-            ON staff.name = ind.added_by_co
+            ON staff.name = sl.added_by_co
         WHERE ind.status = 'Active- ஆக்டிவ்'
               {cond}
         """.format(cond=cond),
@@ -159,20 +159,20 @@ def get_data(filters, group_by):
     def _key_parent(r):
         """Return (group_key, group_display, parent_display) for a row."""
         if group_by == "CO":
-            key   = r.get("added_by_co") or "Unknown"
-            label = r.get("co_name") or key
+            key    = r.get("street_co_id") or "Unknown"
+            label  = r.get("co_name") or key
             parent = r.get("iu_label") or r.get("iu_name") or ""
         elif group_by == "Street":
-            key   = r.get("hh_street") or "Unknown"
-            label = r.get("street_label") or key
+            key    = r.get("hh_street") or "Unknown"
+            label  = r.get("street_label") or key
             parent = r.get("iu_label") or r.get("iu_name") or ""
         elif group_by == "Intervention Unit":
-            key   = r.get("iu_name") or "Unknown"
-            label = r.get("iu_label") or key
-            parent = r.get("iu_org") or r.get("ind_org") or r.get("staff_org") or ""
+            key    = r.get("iu_name") or "Unknown"
+            label  = r.get("iu_label") or key
+            parent = r.get("iu_org") or r.get("street_org") or r.get("staff_org") or ""
         else:  # Implementing Org
-            key   = (r.get("ind_org") or r.get("iu_org") or r.get("staff_org") or "Unknown")
-            label = key
+            key    = (r.get("iu_org") or r.get("street_org") or r.get("staff_org") or "Unknown")
+            label  = key
             parent = ""
         return key, label, parent
 
