@@ -29,16 +29,20 @@ frappe.query_reports["CMCHIS Delay Analysis"] = {
         },
     ],
 
+    onload: function () {
+        injectNeonDarkTheme();
+    },
+
     formatter: function (value, row, column, data, default_formatter) {
         value = default_formatter(value, row, column, data);
         if (!data) return value;
 
-        // max_days_stuck — fire colours with glow
+        // max_days_stuck — neon red with glow
         if (column.fieldname === "max_days_stuck" && data.max_days_stuck !== undefined) {
             var d = parseFloat(data.max_days_stuck) || 0;
             if (d > 60) {
                 value = "<span style='color:#ff1744;font-weight:900;"
-                    + "text-shadow:0 0 10px #ff174488;font-size:1.05em'>🔥 " + value + "</span>";
+                    + "text-shadow:0 0 10px #ff174488;font-size:1.05em'>" + value + "</span>";
             } else if (d > 30) {
                 value = "<span style='color:#ff1744;font-weight:700;"
                     + "text-shadow:0 0 6px #ff174455'>" + value + "</span>";
@@ -80,12 +84,12 @@ frappe.query_reports["CMCHIS Delay Analysis"] = {
             }
         }
 
-        // Group label / name — neon purple
+        // Group label — neon purple
         if (column.fieldname === "group_label" && value) {
             value = "<span style='color:#e040fb;font-weight:700'>" + value + "</span>";
         }
 
-        // stage column — coloured badge
+        // Stage badge
         if (column.fieldname === "stage" && data.stage) {
             var stageColors = {
                 "Reach Gap":       "#78909c",

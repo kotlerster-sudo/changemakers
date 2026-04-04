@@ -71,3 +71,23 @@ changemakers.utils.handle_ward_field = (frm) => {
 changemakers.utils.set_query_for_district = set_query_for_district;
 changemakers.utils.set_query_for_zone = set_query_for_zone;
 changemakers.utils.set_query_for_ward = set_query_for_ward;
+
+// ── Neon dark theme for WRP Performance reports ───────────────────────────────
+function injectNeonDarkTheme() {
+    if (document.getElementById("neon-dark-report-style")) return;
+    var s = document.createElement("style");
+    s.id = "neon-dark-report-style";
+    s.textContent = [
+        ".report-wrapper .datatable { background:#0d0d0d; border-color:#1e1e1e; }",
+        ".report-wrapper .dt-scrollable { background:#0d0d0d !important; }",
+        ".report-wrapper .dt-freeze { background:#0d0d0d !important; }",
+        ".report-wrapper .dt-cell { background:#0d0d0d !important; border-color:#1e1e1e !important; }",
+        ".report-wrapper .dt-cell__content { background:#0d0d0d !important; color:#d8d8d8 !important; }",
+        ".report-wrapper .dt-cell--header .dt-cell__content { background:#111 !important; color:#e0e0e0 !important; font-weight:600; border-bottom:1px solid #2a2a2a !important; }",
+        ".report-wrapper .dt-row:hover .dt-cell { background:#181818 !important; }",
+        ".report-wrapper .dt-row:hover .dt-cell__content { background:#181818 !important; }",
+        ".report-wrapper .dt-input { background:#1a1a1a !important; color:#e0e0e0 !important; border-color:#333 !important; }",
+        ".report-wrapper .dt-cell--alt .dt-cell__content { background:#0f0f0f !important; }",
+    ].join("\n");
+    document.head.appendChild(s);
+}

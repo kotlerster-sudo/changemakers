@@ -29,20 +29,22 @@ frappe.query_reports["CMCHIS Pipeline Dashboard"] = {
         },
     ],
 
+    onload: function () {
+        injectNeonDarkTheme();
+    },
+
     formatter: function (value, row, column, data, default_formatter) {
         value = default_formatter(value, row, column, data);
         if (!data) return value;
 
-        // ── Group summary rows (indent 0) ────────────────────────────────────
+        // ── Group summary rows (indent 0) ─────────────────────────────────────
         if (data.indent === 0) {
-            // Group label — neon purple, bold
             if (column.fieldname === "label") {
                 value = "<strong style='color:#e040fb;font-size:1.02em'>"
                     + (data.label || "") + "</strong>";
                 return value;
             }
 
-            // % Active — neon glow
             if (column.fieldname === "pct_active" && data.pct_active !== "") {
                 var pct = parseFloat(data.pct_active) || 0;
                 var color = pct >= 30 ? "#00e676" : pct >= 15 ? "#ff6d00" : "#ff1744";
@@ -51,7 +53,6 @@ frappe.query_reports["CMCHIS Pipeline Dashboard"] = {
                 return value;
             }
 
-            // Active count — neon green
             if (column.fieldname === "active") {
                 var n = parseInt(data.active) || 0;
                 if (n > 0) {
@@ -59,48 +60,36 @@ frappe.query_reports["CMCHIS Pipeline Dashboard"] = {
                         + "text-shadow:0 0 6px #00e67655'>" + value + "</span>";
                 }
             }
-
-            // Applied — neon blue
             if (column.fieldname === "applied") {
                 var a = parseInt(data.applied) || 0;
                 if (a > 0) {
                     value = "<span style='color:#40c4ff;font-weight:600'>" + value + "</span>";
                 }
             }
-
-            // Reach gap — grey
             if (column.fieldname === "reach_gap") {
                 var rg = parseInt(data.reach_gap) || 0;
                 if (rg > 0) {
                     value = "<span style='color:#78909c;font-weight:600'>" + value + "</span>";
                 }
             }
-
-            // No update — orange
             if (column.fieldname === "no_update") {
                 var nu = parseInt(data.no_update) || 0;
                 if (nu > 0) {
                     value = "<span style='color:#ff6d00;font-weight:600'>" + value + "</span>";
                 }
             }
-
-            // Doc gap columns — amber
             if (column.fieldname === "both_missing" || column.fieldname === "no_aadhaar" || column.fieldname === "no_income") {
                 var dg = parseInt(data[column.fieldname]) || 0;
                 if (dg > 0) {
                     value = "<span style='color:#ff8f00;font-weight:600'>" + value + "</span>";
                 }
             }
-
-            // Ready to apply — neon yellow
             if (column.fieldname === "documented") {
                 var doc = parseInt(data.documented) || 0;
                 if (doc > 0) {
                     value = "<span style='color:#ffd740;font-weight:700'>" + value + "</span>";
                 }
             }
-
-            // Rejected — neon red
             if (column.fieldname === "rejected") {
                 var rej = parseInt(data.rejected) || 0;
                 if (rej > 0) {
@@ -109,20 +98,17 @@ frappe.query_reports["CMCHIS Pipeline Dashboard"] = {
             }
         }
 
-        // ── Individual detail rows (indent 1) ────────────────────────────────
+        // ── Individual detail rows (indent 1) ─────────────────────────────────
         if (data.indent === 1) {
-            // Individual name — muted
             if (column.fieldname === "label") {
-                value = "<span style='color:#555'>" + (data.label || "") + "</span>";
+                value = "<span style='color:#aaa'>" + (data.label || "") + "</span>";
                 return value;
             }
 
-            // IPID / reference — faint purple
             if (column.fieldname === "sub_label" && data.sub_label) {
-                value = "<span style='color:#9c27b0;font-size:0.88em'>" + data.sub_label + "</span>";
+                value = "<span style='color:#ce93d8;font-size:0.88em'>" + data.sub_label + "</span>";
             }
 
-            // Stage badge — full neon palette
             if (column.fieldname === "stage" && data.stage) {
                 var stageMap = {
                     "Reach Gap (Unvisited)":    { color: "#78909c" },
