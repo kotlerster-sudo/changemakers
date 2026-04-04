@@ -30,29 +30,83 @@ frappe.query_reports["CO Daily Coverage"] = {
 
     formatter: function (value, row, column, data, default_formatter) {
         value = default_formatter(value, row, column, data);
-
         if (!data) return value;
 
-        // Bold CO rows
-        if (data.bold && column.fieldname === "label") {
-            value = "<strong>" + value + "</strong>";
+        // CO summary rows (indent 0)
+        if (data.indent === 0) {
+            var pct = parseFloat(data.coverage_pct) || 0;
+
+            // CO name — neon purple, bold
+            if (column.fieldname === "label") {
+                var icon = pct >= 80 ? "🟢 " : pct >= 50 ? "🟠 " : "🔴 ";
+                value = "<span style='color:#e040fb;font-weight:700'>"
+                    + icon + (data.label || "") + "</span>";
+                return value;
+            }
+
+            // Coverage % — neon glow
+            if (column.fieldname === "coverage_pct") {
+                var color = pct >= 80 ? "#00e676" : pct >= 50 ? "#ff6d00" : "#ff1744";
+                value = "<span style='color:" + color + ";font-weight:900;font-size:1.08em;"
+                    + "text-shadow:0 0 10px " + color + "88'>" + value + "</span>";
+            }
+
+            // Visited count — neon green
+            if (column.fieldname === "visited") {
+                var v = parseInt(data.visited) || 0;
+                if (v > 0) {
+                    value = "<span style='color:#00e676;font-weight:700'>" + value + "</span>";
+                }
+            }
         }
 
-        // Colour coverage % — red below 50%, amber 50–79%, green 80%+
-        if (column.fieldname === "coverage_pct" && data.indent === 0) {
-            var pct = data.coverage_pct || 0;
-            var color = pct >= 80 ? "green" : pct >= 50 ? "#cc6600" : "red";
-            value = "<span style='color:" + color + ";font-weight:bold'>" + value + "</span>";
-        }
-
-        // Dim household rows slightly
+        // Individual detail rows (indent 1)
         if (data.indent === 1) {
-            value = "<span style='color:#555'>" + value + "</span>";
+            if (column.fieldname === "label") {
+                value = "<span style='color:#555'>" + (data.label || "") + "</span>";
+                return value;
+            }
+
+            // Stage badge
+            if (column.fieldname === "stage") {
+                var stageColors = {
+                    "CMCHIS Active":       "#00e676",
+                    "Applied":             "#40c4ff",
+                    "Ready to Apply":      "#ffd740",
+                    "Both Docs Missing":   "#ff6d00",
+                    "Aadhaar Missing":     "#ff8f00",
+                    "Income Cert Missing": "#ff8f00",
+                    "No Update":           "#ff6d00",
+                    "First Visit":         "#b388ff",
+                    "Rejected":            "#ff1744",
+                };
+                var sc = stageColors[data.stage] || "#888";
+                value = "<span style='color:" + sc + ";font-weight:600'>"
+                    + (data.stage || "") + "</span>";
+            }
+
+            // Visit type badge
+            if (column.fieldname === "visit_type") {
+                var vtColors = {
+                    "first":   "#b388ff",
+                    "doc":     "#40c4ff",
+                    "regular": "#78909c",
+                };
+                var vtLabels = {
+                    "first":   "First Visit",
+                    "doc":     "Doc Follow-up",
+                    "regular": "Regular",
+                };
+                var vt = data.visit_type || "";
+                var vtc = vtColors[vt] || "#888";
+                var vtl = vtLabels[vt] || vt;
+                value = "<span style='color:" + vtc + ";font-weight:600;font-size:0.9em'>"
+                    + vtl + "</span>";
+            }
         }
 
         return value;
     },
 
-    // Start with all rows visible; managers can scroll through
     initial_depth: 1,
 };
