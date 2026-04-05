@@ -103,17 +103,12 @@
  "report_name": "CO Daily Coverage",
  "report_type": "Script Report",
  "roles": [
-  {
-   "role": "System Manager"
-  },
-  {
-   "role": "Admin (Partner)"
-  },
-  {
-   "role": "Program Manager"
-  },
-  {
-   "role": "Partner SMT"
-  }
+  {"role": "System Manager"},
+  {"role": "Admin (Partner)"},
+  {"role": "Program Manager"},
+  {"role": "Partner SMT"},
+  {"role": "WRP-PM"},
+  {"role": "WRP-AC"},
+  {"role": "WRP-MIS"}
  ]
 }

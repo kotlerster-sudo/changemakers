@@ -148,8 +148,10 @@ def get_daily_workplan():
             else:
                 payload["workplan"]["pending_docs"].append(data)
 
-            # Daily plan pools — skip visited today, active, rejected
-            if not data["is_active"] and not data["visited_today"] and not data["is_rejected"]:
+            # Daily plan pools — skip active and rejected; keep visited_today
+            # so the 30-home list stays stable throughout the day instead of
+            # refreshing with new homes after each visit (which caused >30 visits).
+            if not data["is_active"] and not data["is_rejected"]:
                 if data["max_visits"] == 0:
                     unvisited_pool.append(data)
                 elif data["has_closer"] and not data["is_applied"]:
@@ -438,3 +440,48 @@ def get_co_household_list():
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "CO Household List API Error")
         return {"error_caught": str(e), "visit_buckets": {}, "funnel_buckets": {}, "history_feed": []}
+
+
+# ── CMCHIS status valid options (must match the Select field on Household Profile-WRP) ──
+_VALID_CMCHIS = [
+    "Start \u2013 CMCHIS not applied",
+    "CMCHIS Applied \u2013 ETA 5d",
+    "CMCHIS Active",
+    "Rejected",
+]
+
+# Aliases so the Flutter app can send natural-language values
+_CMCHIS_ALIASES = {
+    "rejected":                         "Rejected",
+    "reject":                           "Rejected",
+    "application rejected":             "Rejected",
+    "cmchis active":                    "CMCHIS Active",
+    "active":                           "CMCHIS Active",
+    "cmchis applied":                   "CMCHIS Applied \u2013 ETA 5d",
+    "applied":                          "CMCHIS Applied \u2013 ETA 5d",
+    "cmchis applied \u2013 eta 5d":     "CMCHIS Applied \u2013 ETA 5d",
+    "not applied":                      "Start \u2013 CMCHIS not applied",
+    "start":                            "Start \u2013 CMCHIS not applied",
+    "start \u2013 cmchis not applied":  "Start \u2013 CMCHIS not applied",
+}
+
+
+@frappe.whitelist()
+def save_cmchis_status(hhid, status):
+    """
+    Save cmchis_status on a Household Profile-WRP record.
+    Accepts exact option values or common aliases (case-insensitive).
+    """
+    normalised = _CMCHIS_ALIASES.get((status or "").strip().lower())
+    if not normalised:
+        if status in _VALID_CMCHIS:
+            normalised = status
+        else:
+            return {
+                "error": f"Invalid CMCHIS status: {status!r}",
+                "valid_values": _VALID_CMCHIS,
+            }
+
+    frappe.db.set_value("Household Profile-WRP", hhid, "cmchis_status", normalised)
+    frappe.db.commit()
+    return {"status": "ok", "saved": normalised}

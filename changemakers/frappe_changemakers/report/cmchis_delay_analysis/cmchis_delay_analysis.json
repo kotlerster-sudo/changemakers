@@ -128,17 +128,12 @@
  "report_name": "CMCHIS Delay Analysis",
  "report_type": "Script Report",
  "roles": [
-  {
-   "role": "System Manager"
-  },
-  {
-   "role": "Admin (Partner)"
-  },
-  {
-   "role": "Program Manager"
-  },
-  {
-   "role": "Partner SMT"
-  }
+  {"role": "System Manager"},
+  {"role": "Admin (Partner)"},
+  {"role": "Program Manager"},
+  {"role": "Partner SMT"},
+  {"role": "WRP-PM"},
+  {"role": "WRP-AC"},
+  {"role": "WRP-MIS"}
  ]
 }

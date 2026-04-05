@@ -2,6 +2,16 @@ import frappe
 from frappe.utils import getdate, date_diff, nowdate
 
 
+def _user_org_filter():
+    wrp_roles = {"WRP-PM", "WRP-AC", "WRP-MIS"}
+    if not wrp_roles.intersection(set(frappe.get_roles(frappe.session.user))):
+        return "", {}
+    org = frappe.db.get_value("Staff details - WRP", {"mail_id": frappe.session.user}, "organisation")
+    if not org:
+        return None
+    return " AND sl.implementing_org = %(user_org)s", {"user_org": org}
+
+
 # ── Stage classification ──────────────────────────────────────────────────────
 
 STAGE_UNVISITED   = "unvisited"
@@ -111,6 +121,13 @@ def get_data(filters, group_by):
     if filters.get("intervention_unit"):
         cond += " AND sl.intervention_units = %(intervention_unit)s"
         vals["intervention_unit"] = filters["intervention_unit"]
+
+    org_filter = _user_org_filter()
+    if org_filter is None:
+        return []
+    org_cond, org_vals = org_filter
+    cond += org_cond
+    vals.update(org_vals)
 
     rows = frappe.db.sql(
         """

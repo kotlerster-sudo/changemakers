@@ -61,6 +61,9 @@
   {"role": "System Manager"},
   {"role": "Admin (Partner)"},
   {"role": "Program Manager"},
-  {"role": "Partner SMT"}
+  {"role": "Partner SMT"},
+  {"role": "WRP-PM"},
+  {"role": "WRP-AC"},
+  {"role": "WRP-MIS"}
  ]
 }

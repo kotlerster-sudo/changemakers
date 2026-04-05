@@ -1,6 +1,22 @@
 import frappe
 
 
+def _user_org_filter():
+    """
+    Returns (cond, vals) to restrict data to the current user's implementing org
+    when they hold a WRP-PM / WRP-AC / WRP-MIS role.
+    Returns ("", {}) for unrestricted roles.
+    Returns None when a WRP user has no staff record (no data should be shown).
+    """
+    wrp_roles = {"WRP-PM", "WRP-AC", "WRP-MIS"}
+    if not wrp_roles.intersection(set(frappe.get_roles(frappe.session.user))):
+        return "", {}
+    org = frappe.db.get_value("Staff details - WRP", {"mail_id": frappe.session.user}, "organisation")
+    if not org:
+        return None
+    return " AND sl.implementing_org = %(user_org)s", {"user_org": org}
+
+
 def execute(filters=None):
     filters = filters or {}
     columns = get_columns()
@@ -37,6 +53,13 @@ def get_data(filters):
     if filters.get("intervention_unit"):
         street_conditions += " AND sl.intervention_units = %(intervention_unit)s"
         street_values["intervention_unit"] = filters["intervention_unit"]
+
+    org_filter = _user_org_filter()
+    if org_filter is None:
+        return []
+    org_cond, org_vals = org_filter
+    street_conditions += org_cond
+    street_values.update(org_vals)
 
     # Fetch all matching streets with their CO (added_by_co) and IU
     streets = frappe.db.sql(
