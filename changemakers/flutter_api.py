@@ -12,7 +12,7 @@ def _get_staff_member():
 
 
 @frappe.whitelist()
-def get_daily_workplan():
+def get_daily_workplan(force_refresh=0):
     payload = {
         "error_caught": None,
         "overall_metrics": {"total_individuals": 0, "total_households": 0, "visited_households": 0, "active_households": 0},
@@ -163,7 +163,7 @@ def get_daily_workplan():
         # Subsequent calls return the same 30 with refreshed visited_today flags,
         # so visiting a house never swaps in a new one mid-day (avoids >30 visits).
         cache_key = f"daily_plan:{staff_member}:{today_str}"
-        cached_ids = frappe.cache().get_value(cache_key)
+        cached_ids = None if frappe.utils.cint(force_refresh) else frappe.cache().get_value(cache_key)
 
         if cached_ids:
             # Reconstruct in cached order, refreshing live data
@@ -239,7 +239,9 @@ def get_daily_workplan():
 @frappe.whitelist()
 def clear_daily_plan_cache():
     """One-time helper to flush today's cached daily plans for all COs."""
-    frappe.cache().delete_keys("daily_plan:*")
+    # Frappe prefixes Redis keys with the site name (e.g. "site.com||key"),
+    # so we need a wildcard prefix to match them.
+    frappe.cache().delete_keys("*daily_plan:*")
     return {"status": "ok"}
 
 
