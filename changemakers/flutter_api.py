@@ -67,8 +67,12 @@ def get_daily_workplan():
                 "cmchis_status": c_raw,
                 "members": [],
                 "max_visits": 0,
+                "max_days_overdue": 0,       # largest overdue gap across members
+                "min_days_since_visit": None, # most recent visit across members (for followup sort)
                 "has_closer": False,
                 "has_sla_due": False,
+                "has_aadhaar": False,
+                "has_income": False,
                 "is_active": "active" in c_raw.lower(),
                 "is_applied": "applied" in c_raw.lower() and "not" not in c_raw.lower(),
                 "is_rejected": "rejected" in c_raw.lower(),
@@ -86,20 +90,25 @@ def get_daily_workplan():
 
             current_hh = hh_groups[hid]
             is_due = False
+            days_since = None
 
             if vc > 0 and lv_raw:
                 lv_str = str(lv_raw)[:10]
                 lv_date = frappe.utils.getdate(lv_str)
+                days_since = frappe.utils.date_diff(today_date, lv_date)
                 if lv_str == today_str:
                     current_hh["visited_today"] = True
                 # NOTE: SLA detection matches substrings in status option labels.
                 # If status labels change (e.g. "ETA 15d" → "ETA 15 days"), update here.
-                if '15d' in a_stat and frappe.utils.date_diff(today_date, lv_date) >= 15:
+                if '15d' in a_stat and days_since >= 15:
                     is_due = True
-                elif '4d' in i_stat and frappe.utils.date_diff(today_date, lv_date) >= 4:
+                    current_hh["max_days_overdue"] = max(current_hh["max_days_overdue"], days_since)
+                elif '4d' in i_stat and days_since >= 4:
                     is_due = True
-                elif '5d' in current_hh["cmchis_status"] and frappe.utils.date_diff(today_date, lv_date) >= 5:
+                    current_hh["max_days_overdue"] = max(current_hh["max_days_overdue"], days_since)
+                elif '5d' in current_hh["cmchis_status"] and days_since >= 5:
                     is_due = True
+                    current_hh["max_days_overdue"] = max(current_hh["max_days_overdue"], days_since)
 
             current_hh["members"].append({
                 "id": str(ind.get("name")),
@@ -118,23 +127,24 @@ def get_daily_workplan():
 
             if vc > current_hh["max_visits"]:
                 current_hh["max_visits"] = vc
+            if days_since is not None:
+                if current_hh["min_days_since_visit"] is None or days_since < current_hh["min_days_since_visit"]:
+                    current_hh["min_days_since_visit"] = days_since
             if is_due:
                 current_hh["has_sla_due"] = True
-            # Only flag as "closer" if both docs received AND household hasn't already applied or gone active
+            if "Received" in a_stat:
+                current_hh["has_aadhaar"] = True
+            if "Received" in i_stat:
+                current_hh["has_income"] = True
             if ("Received" in a_stat and "Received" in i_stat
                     and not current_hh["is_active"] and not current_hh["is_applied"]):
                 current_hh["has_closer"] = True
 
-        unvisited_pool = []
-        docs_ready_pool = []
-        followup_pool = []
-
+        # Build full workplan buckets (all households, all statuses)
         for hid in hh_groups:
             data = hh_groups[hid]
             if not data["members"]:
                 continue
-
-            # Full queue buckets
             if data["is_rejected"]:
                 payload["workplan"]["rejected"].append(data)
             elif data["is_active"]:
@@ -148,19 +158,69 @@ def get_daily_workplan():
             else:
                 payload["workplan"]["pending_docs"].append(data)
 
-            # Daily plan pools — skip active and rejected; keep visited_today
-            # so the 30-home list stays stable throughout the day instead of
-            # refreshing with new homes after each visit (which caused >30 visits).
-            if not data["is_active"] and not data["is_rejected"]:
+        # ── DAILY PLAN: stable 30, generated once per day ─────────────────────
+        # On first call of the day, select 30 households and cache their IDs.
+        # Subsequent calls return the same 30 with refreshed visited_today flags,
+        # so visiting a house never swaps in a new one mid-day (avoids >30 visits).
+        cache_key = f"daily_plan:{staff_member}:{today_str}"
+        cached_ids = frappe.cache().get_value(cache_key)
+
+        if cached_ids:
+            # Reconstruct in cached order, refreshing live data
+            plan_map = {hid: hh_groups[hid] for hid in cached_ids if hid in hh_groups}
+            payload["daily_plan"] = [plan_map[hid] for hid in cached_ids if hid in plan_map]
+        else:
+            # Pool 1 — Unvisited: never visited, ALL statuses (active/rejected included
+            #           because Aadhaar + income docs matter for other govt schemes too)
+            unvisited_pool = []
+            # Pool 2 — Docs ready: both docs received and ready to push CMCHIS application,
+            #           OR active/rejected households still missing a doc for other schemes
+            docs_ready_pool = []
+            # Pool 3a — SLA overdue: at least one member has blown past their follow-up window
+            sla_pool = []
+            # Pool 3b — General follow-up: visited but no SLA alarm yet; longest-idle first
+            other_followup_pool = []
+
+            for hid, data in hh_groups.items():
+                if not data["members"]:
+                    continue
+
                 if data["max_visits"] == 0:
                     unvisited_pool.append(data)
-                elif data["has_closer"] and not data["is_applied"]:
+                elif (data["has_closer"] and not data["is_applied"]) or (
+                    (data["is_active"] or data["is_rejected"])
+                    and not (data["has_aadhaar"] and data["has_income"])
+                ):
                     docs_ready_pool.append(data)
+                elif data["has_sla_due"]:
+                    sla_pool.append(data)
                 else:
-                    followup_pool.append(data)
+                    other_followup_pool.append(data)
 
-        # 10 from each pool = 30 total
-        payload["daily_plan"] = unvisited_pool[:10] + docs_ready_pool[:10] + followup_pool[:10]
+            # Within each pool sort by street so CO walks one street at a time
+            def by_street(d):
+                return (d["street_name"], d["max_visits"])
+
+            unvisited_pool.sort(key=by_street)
+            docs_ready_pool.sort(key=by_street)
+            # SLA pool: most overdue first, then street
+            sla_pool.sort(key=lambda d: (-d["max_days_overdue"], d["street_name"]))
+            # General followup: longest idle first, then street
+            other_followup_pool.sort(key=lambda d: (-(d["min_days_since_visit"] or 0), d["street_name"]))
+
+            followup_combined = sla_pool + other_followup_pool
+
+            selected = unvisited_pool[:10] + docs_ready_pool[:10] + followup_combined[:10]
+
+            # Final sort: group the whole list by street so the CO finishes
+            # one street before moving to the next. Within a street, preserve
+            # the pool priority order (unvisited → docs-ready → follow-up).
+            pool_rank = {d["hhid"]: i for i, d in enumerate(selected)}
+            selected.sort(key=lambda d: (d["street_name"], pool_rank[d["hhid"]]))
+
+            plan_ids = [d["hhid"] for d in selected]
+            frappe.cache().set_value(cache_key, plan_ids, expires_in_sec=86400)
+            payload["daily_plan"] = selected
 
         payload["overall_metrics"]["total_individuals"] = len(individuals)
         payload["overall_metrics"]["total_households"] = len([x for x in hh_groups if hh_groups[x]["members"]])
