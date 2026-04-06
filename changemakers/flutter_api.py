@@ -201,7 +201,6 @@ def get_daily_workplan(force_refresh=0):
             "has_income_count": sum(1 for d in hh_groups.values() if d["has_income"]),
         }
         payload["pool_debug"] = pool_debug
-        frappe.log_error(str(pool_debug), f"Daily Plan Debug — {staff_member}")
 
         # Within each pool sort by street so CO walks one street at a time
         def by_street(d):
@@ -233,6 +232,8 @@ def get_daily_workplan(force_refresh=0):
         pool_rank = {d["hhid"]: i for i, d in enumerate(selected)}
         selected.sort(key=lambda d: (d["street_name"], pool_rank[d["hhid"]]))
 
+        pool_debug["final_count"] = len(selected)
+        frappe.log_error(str(pool_debug), f"Daily Plan Debug — {staff_member}")
         payload["daily_plan"] = selected
 
         payload["overall_metrics"]["total_individuals"] = len(individuals)
