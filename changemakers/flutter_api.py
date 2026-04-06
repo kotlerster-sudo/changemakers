@@ -237,6 +237,13 @@ def get_daily_workplan():
 
 
 @frappe.whitelist()
+def clear_daily_plan_cache():
+    """One-time helper to flush today's cached daily plans for all COs."""
+    frappe.cache().delete_keys("daily_plan:*")
+    return {"status": "ok"}
+
+
+@frappe.whitelist()
 def get_co_performance():
     payload = {
         "error_caught": None,
