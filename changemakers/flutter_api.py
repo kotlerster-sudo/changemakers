@@ -17,8 +17,7 @@ def get_daily_workplan(force_refresh=0):
         "error_caught": None,
         "overall_metrics": {"total_individuals": 0, "total_households": 0, "visited_households": 0, "active_households": 0},
         "daily_plan": [],
-        "workplan": {"unvisited": [], "pending_docs": [], "ready_to_apply": [], "applied": [], "active": [], "rejected": []},
-        "pool_debug": {}
+        "workplan": {"unvisited": [], "pending_docs": [], "ready_to_apply": [], "applied": [], "active": [], "rejected": []}
     }
     try:
         staff_member = _get_staff_member()
@@ -190,17 +189,8 @@ def get_daily_workplan(force_refresh=0):
             else:
                 other_followup_pool.append(data)
 
-        pool_debug = {
-            "total_hh_with_members": sum(1 for d in hh_groups.values() if d["members"]),
-            "unvisited": len(unvisited_pool),
-            "docs_ready": len(docs_ready_pool),
-            "sla_due": len(sla_pool),
-            "other_followup": len(other_followup_pool),
-            "has_closer_count": sum(1 for d in hh_groups.values() if d["has_closer"]),
-            "has_aadhaar_count": sum(1 for d in hh_groups.values() if d["has_aadhaar"]),
-            "has_income_count": sum(1 for d in hh_groups.values() if d["has_income"]),
-        }
-        payload["pool_debug"] = pool_debug
+
+
 
         # Within each pool sort by street so CO walks one street at a time
         def by_street(d):
@@ -232,8 +222,6 @@ def get_daily_workplan(force_refresh=0):
         pool_rank = {d["hhid"]: i for i, d in enumerate(selected)}
         selected.sort(key=lambda d: (d["street_name"], pool_rank[d["hhid"]]))
 
-        pool_debug["final_count"] = len(selected)
-        frappe.log_error(str(pool_debug), f"Daily Plan Debug — {staff_member}")
         payload["daily_plan"] = selected
 
         payload["overall_metrics"]["total_individuals"] = len(individuals)
