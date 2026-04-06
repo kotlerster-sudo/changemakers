@@ -17,7 +17,8 @@ def get_daily_workplan(force_refresh=0):
         "error_caught": None,
         "overall_metrics": {"total_individuals": 0, "total_households": 0, "visited_households": 0, "active_households": 0},
         "daily_plan": [],
-        "workplan": {"unvisited": [], "pending_docs": [], "ready_to_apply": [], "applied": [], "active": [], "rejected": []}
+        "workplan": {"unvisited": [], "pending_docs": [], "ready_to_apply": [], "applied": [], "active": [], "rejected": []},
+        "pool_debug": {}
     }
     try:
         staff_member = _get_staff_member()
@@ -162,78 +163,75 @@ def get_daily_workplan(force_refresh=0):
             else:
                 payload["workplan"]["pending_docs"].append(data)
 
-        # ── DAILY PLAN: stable 30, generated once per day ─────────────────────
-        # On first call of the day, select 30 households and cache their IDs.
-        # Subsequent calls return the same 30 with refreshed visited_today flags,
-        # so visiting a house never swaps in a new one mid-day (avoids >30 visits).
-        cache_key = f"daily_plan:{staff_member}:{today_str}"
-        cached_ids = None if frappe.utils.cint(force_refresh) else frappe.cache().get_value(cache_key)
+        # Pool 1 — Unvisited: never visited, ALL statuses (active/rejected included
+        #           because Aadhaar + income docs matter for other govt schemes too)
+        unvisited_pool = []
+        # Pool 2 — Docs ready: both docs received and ready to push CMCHIS application,
+        #           OR active/rejected households still missing a doc for other schemes
+        docs_ready_pool = []
+        # Pool 3a — SLA overdue: at least one member has blown past their follow-up window
+        sla_pool = []
+        # Pool 3b — General follow-up: visited but no SLA alarm yet; longest-idle first
+        other_followup_pool = []
 
-        if cached_ids:
-            # Reconstruct in cached order, refreshing live data
-            plan_map = {hid: hh_groups[hid] for hid in cached_ids if hid in hh_groups}
-            payload["daily_plan"] = [plan_map[hid] for hid in cached_ids if hid in plan_map]
-        else:
-            # Pool 1 — Unvisited: never visited, ALL statuses (active/rejected included
-            #           because Aadhaar + income docs matter for other govt schemes too)
-            unvisited_pool = []
-            # Pool 2 — Docs ready: both docs received and ready to push CMCHIS application,
-            #           OR active/rejected households still missing a doc for other schemes
-            docs_ready_pool = []
-            # Pool 3a — SLA overdue: at least one member has blown past their follow-up window
-            sla_pool = []
-            # Pool 3b — General follow-up: visited but no SLA alarm yet; longest-idle first
-            other_followup_pool = []
+        for hid, data in hh_groups.items():
+            if not data["members"]:
+                continue
 
-            for hid, data in hh_groups.items():
-                if not data["members"]:
-                    continue
+            if data["max_visits"] == 0:
+                unvisited_pool.append(data)
+            elif (data["has_closer"] and not data["is_applied"]) or (
+                (data["is_active"] or data["is_rejected"])
+                and not (data["has_aadhaar"] and data["has_income"])
+            ):
+                docs_ready_pool.append(data)
+            elif data["has_sla_due"]:
+                sla_pool.append(data)
+            else:
+                other_followup_pool.append(data)
 
-                if data["max_visits"] == 0:
-                    unvisited_pool.append(data)
-                elif (data["has_closer"] and not data["is_applied"]) or (
-                    (data["is_active"] or data["is_rejected"])
-                    and not (data["has_aadhaar"] and data["has_income"])
-                ):
-                    docs_ready_pool.append(data)
-                elif data["has_sla_due"]:
-                    sla_pool.append(data)
-                else:
-                    other_followup_pool.append(data)
+        payload["pool_debug"] = {
+            "total_hh_with_members": sum(1 for d in hh_groups.values() if d["members"]),
+            "unvisited": len(unvisited_pool),
+            "docs_ready": len(docs_ready_pool),
+            "sla_due": len(sla_pool),
+            "other_followup": len(other_followup_pool),
+            "has_closer_count": sum(1 for d in hh_groups.values() if d["has_closer"]),
+            "has_aadhaar_count": sum(1 for d in hh_groups.values() if d["has_aadhaar"]),
+            "has_income_count": sum(1 for d in hh_groups.values() if d["has_income"]),
+        }
 
-            # Within each pool sort by street so CO walks one street at a time
-            def by_street(d):
-                return (d["street_name"], d["max_visits"])
+        # Within each pool sort by street so CO walks one street at a time
+        def by_street(d):
+            return (d["street_name"], d["max_visits"])
 
-            unvisited_pool.sort(key=by_street)
-            docs_ready_pool.sort(key=by_street)
-            # SLA pool: most overdue first, then street
-            sla_pool.sort(key=lambda d: (-d["max_days_overdue"], d["street_name"]))
-            # General followup: longest idle first, then street
-            other_followup_pool.sort(key=lambda d: (-(d["min_days_since_visit"] or 0), d["street_name"]))
+        unvisited_pool.sort(key=by_street)
+        docs_ready_pool.sort(key=by_street)
+        # SLA pool: most overdue first, then street
+        sla_pool.sort(key=lambda d: (-d["max_days_overdue"], d["street_name"]))
+        # General followup: longest idle first, then street
+        other_followup_pool.sort(key=lambda d: (-(d["min_days_since_visit"] or 0), d["street_name"]))
 
-            followup_combined = sla_pool + other_followup_pool
+        followup_combined = sla_pool + other_followup_pool
 
-            selected = unvisited_pool[:10] + docs_ready_pool[:10] + followup_combined[:10]
+        selected = unvisited_pool[:10] + docs_ready_pool[:10] + followup_combined[:10]
 
-            # If any pool had fewer than 10, fill the gap from overflow of other pools
-            # so the daily list always reaches 30 (or total available if < 30).
-            if len(selected) < 30:
-                used = {d["hhid"] for d in selected}
-                overflow = [d for d in (
-                    unvisited_pool[10:] + docs_ready_pool[10:] + followup_combined[10:]
-                ) if d["hhid"] not in used]
-                selected += overflow[:30 - len(selected)]
+        # If any pool had fewer than 10, fill the gap from overflow of other pools
+        # so the daily list always reaches 30 (or total available if < 30).
+        if len(selected) < 30:
+            used = {d["hhid"] for d in selected}
+            overflow = [d for d in (
+                unvisited_pool[10:] + docs_ready_pool[10:] + followup_combined[10:]
+            ) if d["hhid"] not in used]
+            selected += overflow[:30 - len(selected)]
 
-            # Final sort: group the whole list by street so the CO finishes
-            # one street before moving to the next. Within a street, preserve
-            # the pool priority order (unvisited → docs-ready → follow-up).
-            pool_rank = {d["hhid"]: i for i, d in enumerate(selected)}
-            selected.sort(key=lambda d: (d["street_name"], pool_rank[d["hhid"]]))
+        # Final sort: group the whole list by street so the CO finishes
+        # one street before moving to the next. Within a street, preserve
+        # the pool priority order (unvisited → docs-ready → follow-up).
+        pool_rank = {d["hhid"]: i for i, d in enumerate(selected)}
+        selected.sort(key=lambda d: (d["street_name"], pool_rank[d["hhid"]]))
 
-            plan_ids = [d["hhid"] for d in selected]
-            frappe.cache().set_value(cache_key, plan_ids, expires_in_sec=86400)
-            payload["daily_plan"] = selected
+        payload["daily_plan"] = selected
 
         payload["overall_metrics"]["total_individuals"] = len(individuals)
         payload["overall_metrics"]["total_households"] = len([x for x in hh_groups if hh_groups[x]["members"]])
@@ -247,14 +245,6 @@ def get_daily_workplan(force_refresh=0):
         payload["error_caught"] = f"PYTHON CRASH: {str(e)}"
 
     return payload
-
-
-@frappe.whitelist()
-def clear_daily_plan_cache():
-    """One-time helper to flush today's cached daily plans for all COs."""
-    # Frappe stores Redis keys as "{site}||{key}", so we must include the site prefix.
-    frappe.cache().delete_keys(f"{frappe.local.site}||daily_plan:*")
-    return {"status": "ok"}
 
 
 @frappe.whitelist()
