@@ -136,9 +136,13 @@ def get_daily_workplan(force_refresh=0):
                 current_hh["has_aadhaar"] = True
             if "Received" in i_stat:
                 current_hh["has_income"] = True
-            if ("Received" in a_stat and "Received" in i_stat
-                    and not current_hh["is_active"] and not current_hh["is_applied"]):
-                current_hh["has_closer"] = True
+
+        # has_closer is a household-level flag: any member has Aadhaar received AND
+        # any member has Income received (can be different members of same household).
+        for hid in hh_groups:
+            data = hh_groups[hid]
+            if data["has_aadhaar"] and data["has_income"] and not data["is_active"] and not data["is_applied"]:
+                data["has_closer"] = True
 
         # Build full workplan buckets (all households, all statuses)
         for hid in hh_groups:
@@ -211,6 +215,15 @@ def get_daily_workplan(force_refresh=0):
             followup_combined = sla_pool + other_followup_pool
 
             selected = unvisited_pool[:10] + docs_ready_pool[:10] + followup_combined[:10]
+
+            # If any pool had fewer than 10, fill the gap from overflow of other pools
+            # so the daily list always reaches 30 (or total available if < 30).
+            if len(selected) < 30:
+                used = {d["hhid"] for d in selected}
+                overflow = [d for d in (
+                    unvisited_pool[10:] + docs_ready_pool[10:] + followup_combined[10:]
+                ) if d["hhid"] not in used]
+                selected += overflow[:30 - len(selected)]
 
             # Final sort: group the whole list by street so the CO finishes
             # one street before moving to the next. Within a street, preserve
