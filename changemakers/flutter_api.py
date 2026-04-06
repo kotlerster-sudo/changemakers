@@ -169,7 +169,9 @@ def get_daily_workplan(force_refresh=0):
             # Reconstruct in cached order, refreshing live data
             plan_map = {hid: hh_groups[hid] for hid in cached_ids if hid in hh_groups}
             payload["daily_plan"] = [plan_map[hid] for hid in cached_ids if hid in plan_map]
+            frappe.log_error(f"daily_plan cache HIT for {staff_member}: {len(payload['daily_plan'])} households", "Daily Plan Cache")
         else:
+            frappe.log_error(f"daily_plan cache MISS for {staff_member}, regenerating", "Daily Plan Cache")
             # Pool 1 — Unvisited: never visited, ALL statuses (active/rejected included
             #           because Aadhaar + income docs matter for other govt schemes too)
             unvisited_pool = []
