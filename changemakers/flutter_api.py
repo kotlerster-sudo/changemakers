@@ -190,7 +190,7 @@ def get_daily_workplan(force_refresh=0):
             else:
                 other_followup_pool.append(data)
 
-        payload["pool_debug"] = {
+        pool_debug = {
             "total_hh_with_members": sum(1 for d in hh_groups.values() if d["members"]),
             "unvisited": len(unvisited_pool),
             "docs_ready": len(docs_ready_pool),
@@ -200,6 +200,8 @@ def get_daily_workplan(force_refresh=0):
             "has_aadhaar_count": sum(1 for d in hh_groups.values() if d["has_aadhaar"]),
             "has_income_count": sum(1 for d in hh_groups.values() if d["has_income"]),
         }
+        payload["pool_debug"] = pool_debug
+        frappe.log_error(str(pool_debug), f"Daily Plan Debug — {staff_member}")
 
         # Within each pool sort by street so CO walks one street at a time
         def by_street(d):
