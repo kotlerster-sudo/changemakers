@@ -32,6 +32,20 @@ fixtures = [
             )
         },
     },
+    {
+        "dt": "Report",
+        "filters": {
+            "name": (
+                "in",
+                [
+                    "CO CMCHIS Performance",
+                    "CMCHIS Pipeline Dashboard",
+                    "CO Daily Coverage",
+                    "CMCHIS Delay Analysis",
+                ],
+            )
+        },
+    },
 ]
 
 # Includes in <head>
