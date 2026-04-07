@@ -418,7 +418,7 @@ def get_co_household_list():
                     "last_visited_at", "phone", "contact_number", "last_update_summary", "visit_count",
                     "esm_username", "can_id", "notes"],
             order_by="modified desc",
-            limit=500
+            limit=200
         )
 
         # Fetch all document vaults in a single bulk query
