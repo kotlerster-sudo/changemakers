@@ -177,6 +177,10 @@ def get_daily_workplan(force_refresh=0):
             if not data["members"]:
                 continue
 
+            # Fully done: CMCHIS active AND both docs collected — nothing left to do, skip daily plan
+            if data["is_active"] and data["has_aadhaar"] and data["has_income"]:
+                continue
+
             if data["max_visits"] == 0:
                 unvisited_pool.append(data)
             elif (data["has_closer"] and not data["is_applied"]) or (
