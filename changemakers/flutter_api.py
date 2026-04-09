@@ -568,6 +568,40 @@ def save_cmchis_status(hhid, status):
 
 
 @frappe.whitelist()
+def get_status_options():
+    """
+    Returns all status dropdown options and CMCHIS Active unlock rules.
+    Flutter reads this once per session so adding new options is cloud-only.
+    """
+    return {
+        "aadhaar_options": [
+            "Missing Aadhaar",
+            "Aadhaar External \u2013 Needed",
+            "Aadhaar External \u2013 Applied (ETA 15d)",
+            "Aadhaar Internal \u2013 Applied",
+            "Aadhaar \u2013 Correction Needed (unspecified)",
+            "Aadhaar Received",
+        ],
+        "income_options": [
+            "Income Cert Not Applied",
+            "Income Cert Applied \u2013 ETA 4d",
+            "Income Cert Received",
+            "Income Cert Expired",
+        ],
+        "cmchis_options": [
+            "Start \u2013 CMCHIS not applied",
+            "CMCHIS Applied \u2013 ETA 5d",
+            "CMCHIS Active",
+            "Rejected",
+        ],
+        "cmchis_active_unlock": {
+            "aadhaar_values": ["Aadhaar Received"],
+            "income_values": ["Income Cert Received", "Income Cert Expired"],
+        },
+    }
+
+
+@frappe.whitelist()
 def bulk_update_status(records):
     """
     Accepts a JSON list of records and bulk-updates Individual and Household profiles.
