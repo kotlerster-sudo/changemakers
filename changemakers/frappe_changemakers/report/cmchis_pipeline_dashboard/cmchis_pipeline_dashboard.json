@@ -1,8 +1,8 @@
 {
  "add_total_row": 0,
  "columns": [
-  {"fieldname": "label",      "fieldtype": "Data",    "label": "Group / Individual", "width": 230},
-  {"fieldname": "total",      "fieldtype": "Int",     "label": "Total",              "width": 70},
+  {"fieldname": "label",      "fieldtype": "Data",    "label": "Group / Household",  "width": 230},
+  {"fieldname": "total",      "fieldtype": "Int",     "label": "Total HH",           "width": 80},
   {"fieldname": "reach_gap",  "fieldtype": "Int",     "label": "Reach Gap",          "width": 95},
   {"fieldname": "no_update",    "fieldtype": "Int",     "label": "No Update",           "width": 90},
   {"fieldname": "both_missing", "fieldtype": "Int",     "label": "Both Docs Missing",   "width": 130},
