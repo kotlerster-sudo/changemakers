@@ -126,6 +126,7 @@ def get_data(filters, group_by):
             ind.visit_count,
             ind.aadhaar_status,
             ind.income_status,
+            hh.name                     AS hh_name,
             hh.hhid                     AS hh_hhid,
             hh.cmchis_status            AS hh_cmchis,
             hh.respondent               AS hh_respondent,
@@ -171,10 +172,10 @@ def get_data(filters, group_by):
     hh_order = [] # preserve first-seen order
 
     for r in rows:
-        hhid = r.get("hh_hhid") or r.get("ind_id")
+        hhid = r.get("hh_name") or r.get("ind_id")
         if hhid not in hh_map:
             hh_map[hhid] = {
-                "hhid":       hhid,
+                "hhid":       r.get("hh_hhid") or hhid,
                 "respondent": r.get("hh_respondent") or "",
                 "street":     r.get("street_label") or "",
                 "hh_cmchis":  r.get("hh_cmchis") or "",
