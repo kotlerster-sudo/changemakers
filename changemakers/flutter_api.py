@@ -551,3 +551,69 @@ def save_cmchis_status(hhid, status):
     frappe.db.set_value("Household Profile-WRP", hhid, "cmchis_status", normalised)
     frappe.db.commit()
     return {"status": "ok", "saved": normalised}
+
+
+@frappe.whitelist()
+def bulk_update_status(records):
+    """
+    Accepts a JSON list of records and bulk-updates Individual and Household profiles.
+    Each record: {individual_id, hhid, aadhaar_status, income_status, cmchis_status, last_visited_at, notes}
+    Returns counts of updated/skipped rows.
+    """
+    import json
+    if isinstance(records, str):
+        records = json.loads(records)
+
+    ind_updated = 0
+    hh_updated  = 0
+    ind_skipped = 0
+    hh_skipped  = 0
+    hh_seen     = set()
+    errors      = []
+
+    for i, rec in enumerate(records):
+        individual_id = (rec.get("individual_id") or "").strip()
+        hhid          = (rec.get("hhid") or "").strip()
+        aadhaar       = (rec.get("aadhaar_status") or "").strip() or None
+        income        = (rec.get("income_status") or "").strip() or None
+        cmchis        = (rec.get("cmchis_status") or "").strip() or None
+        visited       = (rec.get("last_visited_at") or "").strip() or None
+        notes         = (rec.get("notes") or "").strip() or None
+
+        # Individual Profile-WRP
+        if individual_id:
+            upd = {}
+            if aadhaar: upd["aadhaar_status"]  = aadhaar
+            if income:  upd["income_status"]   = income
+            if visited: upd["last_visited_at"] = visited
+            if notes:   upd["notes"]           = notes
+            if upd:
+                if frappe.db.exists("Individual Profile-WRP", individual_id):
+                    try:
+                        frappe.db.set_value("Individual Profile-WRP", individual_id, upd, update_modified=False)
+                        ind_updated += 1
+                    except Exception as e:
+                        errors.append(f"Ind {individual_id}: {e}")
+                else:
+                    ind_skipped += 1
+
+        # Household Profile-WRP (once per HHID)
+        if hhid and cmchis and hhid not in hh_seen:
+            hh_seen.add(hhid)
+            if frappe.db.exists("Household Profile-WRP", hhid):
+                try:
+                    frappe.db.set_value("Household Profile-WRP", hhid, "cmchis_status", cmchis, update_modified=False)
+                    hh_updated += 1
+                except Exception as e:
+                    errors.append(f"HH {hhid}: {e}")
+            else:
+                hh_skipped += 1
+
+    frappe.db.commit()
+    return {
+        "ind_updated": ind_updated,
+        "hh_updated":  hh_updated,
+        "ind_skipped": ind_skipped,
+        "hh_skipped":  hh_skipped,
+        "errors":      errors[:50]
+    }
