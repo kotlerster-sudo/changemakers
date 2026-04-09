@@ -11,9 +11,42 @@ def _user_org_filter():
     return " AND sl.implementing_org = %(user_org)s", {"user_org": org}
 
 
-# ── Pipeline bucket classification ───────────────────────────────────────────
+# ── Household-level classification ───────────────────────────────────────────
 
-def _bucket(visit_count, aadhaar_status, income_status, hh_cmchis):
+AADHAAR_RECEIVED = "Aadhaar Received"
+INCOME_READY = {"Income Cert Received", "Income Cert Expired"}
+
+
+def _hh_closer(members):
+    """True if any ONE member has both aadhaar received AND income ready."""
+    for m in members:
+        has_a = (m.get("aadhaar_status") or "") == AADHAAR_RECEIVED
+        has_i = (m.get("income_status") or "") in INCOME_READY
+        if has_a and has_i:
+            return True
+    return False
+
+
+def _hh_doc_gap(members):
+    """
+    For a visited household that is NOT a closer, return the doc gap:
+    - If any member has Aadhaar Received → that member needs income cert → 'no_income'
+    - Elif any member has income ready → that member needs aadhaar → 'no_aadhaar'
+    - Else → 'both_missing'
+
+    Edge case: Member A has aadhaar, Member B has income (different people, neither has both)
+    → 'no_income' (actionable: get income for the aadhaar-holder)
+    """
+    any_aadhaar = any((m.get("aadhaar_status") or "") == AADHAAR_RECEIVED for m in members)
+    any_income = any((m.get("income_status") or "") in INCOME_READY for m in members)
+    if any_aadhaar:
+        return "no_income"
+    if any_income:
+        return "no_aadhaar"
+    return "both_missing"
+
+
+def _hh_bucket(hh_cmchis, max_visits, members):
     c = (hh_cmchis or "").lower()
     if "active" in c:
         return "active"
@@ -21,35 +54,11 @@ def _bucket(visit_count, aadhaar_status, income_status, hh_cmchis):
         return "rejected"
     if "applied" in c and "not" not in c:
         return "applied"
-    vc = int(visit_count or 0)
-    if vc == 0:
+    if int(max_visits or 0) == 0:
         return "reach_gap"
-    has_a = "Received" in (aadhaar_status or "")
-    has_i = "Received" in (income_status or "")
-    if has_a and has_i:
+    if _hh_closer(members):
         return "documented"
     return "no_update"
-
-
-def _doc_gap(visit_count, aadhaar_status, income_status, hh_cmchis):
-    """Return doc-gap sub-bucket for visited individuals not yet in pipeline.
-    Returns None for unvisited / applied / active / rejected."""
-    c = (hh_cmchis or "").lower()
-    if "active" in c or "rejected" in c:
-        return None
-    if "applied" in c and "not" not in c:
-        return None
-    if int(visit_count or 0) == 0:
-        return None
-    has_a = "Received" in (aadhaar_status or "")
-    has_i = "Received" in (income_status or "")
-    if has_a and has_i:
-        return None          # documented / ready to apply — no gap
-    if not has_a and not has_i:
-        return "both_missing"
-    if not has_a:
-        return "no_aadhaar"  # has income, needs aadhaar
-    return "no_income"       # has aadhaar, needs income cert
 
 
 def _bucket_label(bucket):
@@ -73,8 +82,8 @@ def execute(filters=None):
 
 def get_columns():
     return [
-        {"fieldname": "label",        "label": "Group / Individual", "fieldtype": "Data",    "width": 230},
-        {"fieldname": "total",        "label": "Total",              "fieldtype": "Int",     "width": 70},
+        {"fieldname": "label",        "label": "Group / Household",  "fieldtype": "Data",    "width": 230},
+        {"fieldname": "total",        "label": "Total HH",           "fieldtype": "Int",     "width": 80},
         {"fieldname": "reach_gap",    "label": "Reach Gap",          "fieldtype": "Int",     "width": 95},
         {"fieldname": "no_update",    "label": "No Update",          "fieldtype": "Int",     "width": 90},
         {"fieldname": "both_missing", "label": "Both Docs Missing",  "fieldtype": "Int",     "width": 130},
@@ -85,7 +94,7 @@ def get_columns():
         {"fieldname": "active",       "label": "Active",             "fieldtype": "Int",     "width": 75},
         {"fieldname": "rejected",     "label": "Rejected",           "fieldtype": "Int",     "width": 80},
         {"fieldname": "pct_active",   "label": "% Active",           "fieldtype": "Percent", "width": 95},
-        {"fieldname": "sub_label",    "label": "ID / Reference",     "fieldtype": "Data",    "width": 160},
+        {"fieldname": "sub_label",    "label": "HHID",               "fieldtype": "Data",    "width": 160},
         {"fieldname": "stage",        "label": "Stage",              "fieldtype": "Data",    "width": 190},
     ]
 
@@ -114,8 +123,6 @@ def get_data(filters, group_by):
         """
         SELECT
             ind.name                    AS ind_id,
-            ind.ipid                    AS ind_ipid,
-            ind.name_of_the_individual  AS ind_name,
             ind.visit_count,
             ind.aadhaar_status,
             ind.income_status,
@@ -159,38 +166,80 @@ def get_data(filters, group_by):
     if not rows:
         return []
 
-    def _group_key(r):
+    # ── Step 1: group individuals by HHID ─────────────────────────────────────
+    hh_map = {}   # hhid → household dict with members list
+    hh_order = [] # preserve first-seen order
+
+    for r in rows:
+        hhid = r.get("hh_hhid") or r.get("ind_id")
+        if hhid not in hh_map:
+            hh_map[hhid] = {
+                "hhid":       hhid,
+                "respondent": r.get("hh_respondent") or "",
+                "street":     r.get("street_label") or "",
+                "hh_cmchis":  r.get("hh_cmchis") or "",
+                "co_id":      r.get("co_id"),
+                "co_name":    r.get("co_name"),
+                "ac_name":    r.get("ac_name"),
+                "pm_name":    r.get("pm_name"),
+                "iu_id":      r.get("iu_id"),
+                "iu_label":   r.get("iu_label"),
+                "iu_org":     r.get("iu_org"),
+                "street_org": r.get("street_org"),
+                "members":    [],
+            }
+            hh_order.append(hhid)
+        hh_map[hhid]["members"].append({
+            "aadhaar_status": r.get("aadhaar_status"),
+            "income_status":  r.get("income_status"),
+            "visit_count":    r.get("visit_count"),
+        })
+
+    # ── Step 2: classify each household ───────────────────────────────────────
+    for hhid in hh_order:
+        hh = hh_map[hhid]
+        members = hh["members"]
+        max_visits = max(int(m.get("visit_count") or 0) for m in members)
+        bucket = _hh_bucket(hh["hh_cmchis"], max_visits, members)
+        gap = _hh_doc_gap(members) if bucket == "no_update" else None
+        hh["bucket"] = bucket
+        hh["gap"] = gap
+
+    # ── Step 3: group households by the requested dimension ───────────────────
+    def _group_key(hh):
         if group_by == "CO":
-            return r.get("co_id") or "Unassigned", r.get("co_name") or "Unassigned"
+            return hh.get("co_id") or "Unassigned", hh.get("co_name") or "Unassigned"
         if group_by == "AC":
-            v = r.get("ac_name") or "Unassigned"
+            v = hh.get("ac_name") or "Unassigned"
             return v, v
         if group_by == "Project Manager":
-            v = r.get("pm_name") or "Unassigned"
+            v = hh.get("pm_name") or "Unassigned"
             return v, v
         if group_by == "Intervention Unit":
-            return r.get("iu_id") or "Unknown", r.get("iu_label") or r.get("iu_id") or "Unknown"
+            return hh.get("iu_id") or "Unknown", hh.get("iu_label") or hh.get("iu_id") or "Unknown"
         if group_by == "Street":
-            return r.get("street_label") or "Unknown", r.get("street_label") or "Unknown"
-        v = r.get("iu_org") or r.get("street_org") or "Unknown"
+            v = hh.get("street") or "Unknown"
+            return v, v
+        v = hh.get("iu_org") or hh.get("street_org") or "Unknown"
         return v, v
 
     groups = {}
     group_order = []
 
-    for r in rows:
-        gkey, glabel = _group_key(r)
-        bucket = _bucket(r.visit_count, r.aadhaar_status, r.income_status, r.hh_cmchis)
-        gap    = _doc_gap(r.visit_count, r.aadhaar_status, r.income_status, r.hh_cmchis)
+    for hhid in hh_order:
+        hh = hh_map[hhid]
+        gkey, glabel = _group_key(hh)
+        bucket = hh["bucket"]
+        gap = hh["gap"]
 
         if gkey not in groups:
             groups[gkey] = {
-                "label": glabel,
-                "total": 0,
-                "reach_gap": 0, "no_update": 0, "documented": 0,
-                "applied": 0, "active": 0, "rejected": 0,
-                "both_missing": 0, "no_aadhaar": 0, "no_income": 0,
-                "individuals": [],
+                "label":       glabel,
+                "total":       0,
+                "reach_gap":   0, "no_update":  0, "documented": 0,
+                "applied":     0, "active":     0, "rejected":   0,
+                "both_missing":0, "no_aadhaar": 0, "no_income":  0,
+                "households":  [],
             }
             group_order.append(gkey)
 
@@ -200,16 +249,23 @@ def get_data(filters, group_by):
         if gap:
             g[gap] += 1
 
-        g["individuals"].append({
-            "name":   r.get("ind_name") or r.get("hh_respondent") or str(r.get("ind_id")),
-            "ipid":   r.get("ind_ipid") or str(r.get("ind_id")),
-            "hhid":   r.get("hh_hhid") or "",
-            "street": r.get("street_label") or "",
+        g["households"].append({
+            "hhid":   hhid,
+            "name":   hh.get("respondent") or hhid,
+            "street": hh.get("street") or "",
             "bucket": bucket,
             "gap":    gap,
         })
 
     group_order.sort(key=lambda k: -(groups[k]["active"] / max(groups[k]["total"], 1)))
+
+    # ── Step 4: build output rows ──────────────────────────────────────────────
+    BUCKET_ORDER = ["reach_gap", "no_update", "documented", "applied", "active", "rejected"]
+    EMPTY_NUMS = {
+        "total": "", "reach_gap": "", "no_update": "", "both_missing": "",
+        "no_aadhaar": "", "no_income": "", "documented": "", "applied": "",
+        "active": "", "rejected": "", "pct_active": "",
+    }
 
     data = []
     for gkey in group_order:
@@ -236,37 +292,26 @@ def get_data(filters, group_by):
             "bold":         1,
         })
 
-        bucket_order = ["reach_gap", "no_update", "documented", "applied", "active", "rejected"]
-        sorted_inds = sorted(g["individuals"], key=lambda x: bucket_order.index(x["bucket"]))
+        sorted_hhs = sorted(g["households"], key=lambda x: BUCKET_ORDER.index(x["bucket"]))
 
-        for ind in sorted_inds:
-            # Stage label: for no_update rows show the doc gap detail
-            if ind["bucket"] == "no_update" and ind["gap"]:
+        for hh in sorted_hhs:
+            if hh["bucket"] == "no_update" and hh["gap"]:
                 stage_str = {
                     "both_missing": "Both Docs Missing",
                     "no_aadhaar":   "Aadhaar Missing",
                     "no_income":    "Income Cert Missing",
-                }.get(ind["gap"], _bucket_label(ind["bucket"]))
+                }.get(hh["gap"], _bucket_label(hh["bucket"]))
             else:
-                stage_str = _bucket_label(ind["bucket"])
+                stage_str = _bucket_label(hh["bucket"])
 
-            data.append({
-                "label":        ind["name"],
-                "total":        "",
-                "reach_gap":    "",
-                "no_update":    "",
-                "both_missing": "",
-                "no_aadhaar":   "",
-                "no_income":    "",
-                "documented":   "",
-                "applied":      "",
-                "active":       "",
-                "rejected":     "",
-                "pct_active":   "",
-                "sub_label":    ind["ipid"] or ind["hhid"] or "",
-                "stage":        stage_str,
-                "indent":       1,
-                "bold":         0,
+            row = dict(EMPTY_NUMS)
+            row.update({
+                "label":     hh["name"],
+                "sub_label": hh["hhid"] or "",
+                "stage":     stage_str,
+                "indent":    1,
+                "bold":      0,
             })
+            data.append(row)
 
     return data
