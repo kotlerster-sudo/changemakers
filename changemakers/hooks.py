@@ -45,6 +45,7 @@ fixtures = [
                     "CMCHIS Pipeline Dashboard",
                     "CO Daily Coverage",
                     "CMCHIS Delay Analysis",
+                    "WRP Status Transitions",
                 ],
             )
         },
@@ -71,5 +72,11 @@ doc_events = {
         "on_trash": [
             "changemakers.frappe_changemakers.doctype.changemakers_user_profile.changemakers_user_profile.delete_user_profile",
         ],
-    }
+    },
+    "Individual Profile-WRP": {
+        "before_save": "changemakers.wrp_status_logger.log_individual_status_change",
+    },
+    "Household Profile-WRP": {
+        "before_save": "changemakers.wrp_status_logger.log_hh_status_change",
+    },
 }

@@ -7,6 +7,7 @@ def execute():
         "CMCHIS Pipeline Dashboard",
         "CO Daily Coverage",
         "CMCHIS Delay Analysis",
+        "WRP Status Transitions",
     ]
     roles = [
         "System Manager",

@@ -1,0 +1,203 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-04-10 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "hh_name",
+  "hhid",
+  "individual",
+  "field_changed",
+  "old_value",
+  "new_value",
+  "changed_at",
+  "changed_by",
+  "co_id",
+  "co_name",
+  "ac_name",
+  "pm_name",
+  "street_name",
+  "intervention_unit",
+  "implementing_org"
+ ],
+ "fields": [
+  {
+   "fieldname": "hh_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Household (name)",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "hhid",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "HHID"
+  },
+  {
+   "fieldname": "individual",
+   "fieldtype": "Data",
+   "label": "Individual (name)"
+  },
+  {
+   "fieldname": "field_changed",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Field Changed",
+   "options": "aadhaar_status\nincome_status\ncmchis_status",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "old_value",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Old Value"
+  },
+  {
+   "fieldname": "new_value",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "New Value"
+  },
+  {
+   "fieldname": "changed_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Changed At",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "changed_by",
+   "fieldtype": "Data",
+   "label": "Changed By"
+  },
+  {
+   "fieldname": "co_id",
+   "fieldtype": "Data",
+   "label": "CO (name)"
+  },
+  {
+   "fieldname": "co_name",
+   "fieldtype": "Data",
+   "label": "CO Name"
+  },
+  {
+   "fieldname": "ac_name",
+   "fieldtype": "Data",
+   "label": "AC"
+  },
+  {
+   "fieldname": "pm_name",
+   "fieldtype": "Data",
+   "label": "Project Manager"
+  },
+  {
+   "fieldname": "street_name",
+   "fieldtype": "Data",
+   "label": "Street"
+  },
+  {
+   "fieldname": "intervention_unit",
+   "fieldtype": "Data",
+   "label": "Intervention Unit",
+   "search_index": 1
+  },
+  {
+   "fieldname": "implementing_org",
+   "fieldtype": "Data",
+   "label": "Implementing Org",
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-04-10 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Changemakers",
+ "name": "WRP Status Log",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 0,
+   "write": 0
+  },
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "WRP-PM",
+   "share": 0,
+   "write": 0
+  },
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "WRP-AC",
+   "share": 0,
+   "write": 0
+  },
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "WRP-MIS",
+   "share": 0,
+   "write": 0
+  },
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "Program Manager",
+   "share": 0,
+   "write": 0
+  },
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "Partner SMT",
+   "share": 0,
+   "write": 0
+  }
+ ],
+ "sort_field": "changed_at",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0,
+ "track_seen": 0,
+ "track_views": 0
+}
