@@ -73,6 +73,7 @@ def get_daily_workplan(force_refresh=0):
                 "has_sla_due": False,
                 "has_aadhaar": False,
                 "has_income": False,
+                "has_expired_income": False,
                 "is_active": "active" in c_raw.lower(),
                 "is_applied": "applied" in c_raw.lower() and "not" not in c_raw.lower(),
                 "is_rejected": "rejected" in c_raw.lower(),
@@ -136,6 +137,8 @@ def get_daily_workplan(force_refresh=0):
                 current_hh["has_aadhaar"] = True
             if "Received" in i_stat:
                 current_hh["has_income"] = True
+            if "Expired" in i_stat:
+                current_hh["has_expired_income"] = True
 
         # has_closer is a household-level flag: any member has Aadhaar received AND
         # any member has Income received (can be different members of same household).
@@ -162,39 +165,43 @@ def get_daily_workplan(force_refresh=0):
             else:
                 payload["workplan"]["pending_docs"].append(data)
 
-        # Pool 1 — Unvisited: never visited, ALL statuses (active/rejected included
-        #           because Aadhaar + income docs matter for other govt schemes too)
+        # Pool 1 — Unvisited (9): max_visits==0, excludes active/rejected
         unvisited_pool = []
-        # Pool 2 — Docs ready: both docs received and ready to push CMCHIS application,
-        #           OR active/rejected households still missing a doc for other schemes
+        # Pool 2 — Docs ready (9): both Aadhaar + Income received, CMCHIS not yet applied/active/rejected
         docs_ready_pool = []
-        # Pool 3a — SLA overdue: at least one member has blown past their follow-up window
+        # Pool 3 — Follow-up (9): SLA overdue first, then longest idle
         sla_pool = []
-        # Pool 3b — General follow-up: visited but no SLA alarm yet; longest-idle first
         other_followup_pool = []
+        # Pool 4 — Active/Rejected, never visited (max 3, overflow only after Pools 1-3 exhausted)
+        active_rejected_pool = []
 
         for hid, data in hh_groups.items():
             if not data["members"]:
                 continue
 
-            # Fully done: CMCHIS active AND both docs collected — nothing left to do, skip daily plan
-            if data["is_active"] and data["has_aadhaar"] and data["has_income"]:
+            is_terminal = data["is_active"] or data["is_rejected"]
+
+            # Active/Rejected with at least one visit → fully done, exclude from daily plan
+            if is_terminal and data["max_visits"] > 0:
                 continue
 
+            # Pool 4: active/rejected never visited
+            if is_terminal:
+                active_rejected_pool.append(data)
+                continue
+
+            # Pool 1: unvisited, not active/rejected
             if data["max_visits"] == 0:
                 unvisited_pool.append(data)
-            elif (data["has_closer"] and not data["is_applied"]) or (
-                (data["is_active"] or data["is_rejected"])
-                and not (data["has_aadhaar"] and data["has_income"])
-            ):
+            # Pool 2: both docs received, CMCHIS not yet applied
+            elif data["has_aadhaar"] and data["has_income"] and not data["is_applied"]:
                 docs_ready_pool.append(data)
+            # Pool 3a: SLA overdue
             elif data["has_sla_due"]:
                 sla_pool.append(data)
+            # Pool 3b: general follow-up
             else:
                 other_followup_pool.append(data)
-
-
-
 
         # Within each pool sort by street so CO walks one street at a time
         def by_street(d):
@@ -206,19 +213,26 @@ def get_daily_workplan(force_refresh=0):
         sla_pool.sort(key=lambda d: (-d["max_days_overdue"], d["street_name"]))
         # General followup: longest idle first, then street
         other_followup_pool.sort(key=lambda d: (-(d["min_days_since_visit"] or 0), d["street_name"]))
+        active_rejected_pool.sort(key=by_street)
 
         followup_combined = sla_pool + other_followup_pool
 
-        selected = unvisited_pool[:10] + docs_ready_pool[:10] + followup_combined[:10]
+        # Primary fill: 9 from each of Pools 1, 2, 3
+        selected = unvisited_pool[:9] + docs_ready_pool[:9] + followup_combined[:9]
 
-        # If any pool had fewer than 10, fill the gap from overflow of other pools
-        # so the daily list always reaches 30 (or total available if < 30).
+        # Overflow from Pools 1-3 to reach 30 before touching Pool 4
         if len(selected) < 30:
             used = {d["hhid"] for d in selected}
             overflow = [d for d in (
-                unvisited_pool[10:] + docs_ready_pool[10:] + followup_combined[10:]
+                unvisited_pool[9:] + docs_ready_pool[9:] + followup_combined[9:]
             ) if d["hhid"] not in used]
             selected += overflow[:30 - len(selected)]
+
+        # Pool 4 fills any remaining gap (max 3)
+        if len(selected) < 30:
+            used = {d["hhid"] for d in selected}
+            p4 = [d for d in active_rejected_pool if d["hhid"] not in used]
+            selected += p4[:min(3, 30 - len(selected))]
 
         # Final sort: group the whole list by street so the CO finishes
         # one street before moving to the next. Within a street, preserve
