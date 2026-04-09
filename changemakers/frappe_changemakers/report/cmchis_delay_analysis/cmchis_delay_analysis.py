@@ -12,52 +12,65 @@ def _user_org_filter():
     return " AND sl.implementing_org = %(user_org)s", {"user_org": org}
 
 
+# ── Household closer check (same rule as pipeline dashboard) ─────────────────
+
+AADHAAR_RECEIVED = "Aadhaar Received"
+INCOME_READY = {"Income Cert Received", "Income Cert Expired"}
+
+
+def _hh_closer(members):
+    """True if any ONE member has both aadhaar received AND income ready."""
+    for m in members:
+        has_a = (m.get("aadhaar_status") or "") == AADHAAR_RECEIVED
+        has_i = (m.get("income_status") or "") in INCOME_READY
+        if has_a and has_i:
+            return True
+    return False
+
+
 # ── Stage classification ──────────────────────────────────────────────────────
 
-STAGE_UNVISITED   = "unvisited"
-STAGE_PENDING     = "pending_docs"
-STAGE_DOCS_READY  = "docs_ready"
-STAGE_APPLIED     = "applied"
-STAGE_ACTIVE      = "active"
-STAGE_REJECTED    = "rejected"
+STAGE_UNVISITED  = "unvisited"
+STAGE_PENDING    = "pending_docs"
+STAGE_DOCS_READY = "docs_ready"
+STAGE_APPLIED    = "applied"
+STAGE_ACTIVE     = "active"
+STAGE_REJECTED   = "rejected"
 
 
-def _classify(ind, hh_cmchis):
-    """Return (stage, days_at_stage) for a single individual row."""
-    today        = getdate(nowdate())
-    c_stat       = (hh_cmchis or "").lower()
-    vc           = int(ind.get("visit_count") or 0)
-    a_stat       = ind.get("aadhaar_status") or ""
-    i_stat       = ind.get("income_status") or ""
-    lv_raw       = ind.get("last_visited_at")
-    created      = ind.get("creation")
+def _classify_hh(members, hh_cmchis):
+    """Return (stage, days_at_stage) for a household."""
+    today  = getdate(nowdate())
+    c_stat = (hh_cmchis or "").lower()
 
-    # Stage
     if "active" in c_stat:
         stage = STAGE_ACTIVE
     elif "rejected" in c_stat:
         stage = STAGE_REJECTED
     elif "applied" in c_stat and "not" not in c_stat:
         stage = STAGE_APPLIED
-    elif vc == 0:
-        stage = STAGE_UNVISITED
-    elif "Received" in a_stat and "Received" in i_stat:
-        stage = STAGE_DOCS_READY
     else:
-        stage = STAGE_PENDING
+        max_visits = max(int(m.get("visit_count") or 0) for m in members)
+        if max_visits == 0:
+            stage = STAGE_UNVISITED
+        elif _hh_closer(members):
+            stage = STAGE_DOCS_READY
+        else:
+            stage = STAGE_PENDING
 
     # Days at stage
     if stage == STAGE_UNVISITED:
-        # Time since the record was created — how long this person has been waiting
-        ref = getdate(str(created)[:10]) if created else today
+        # How long since the earliest member record was created
+        creations = [m.get("creation") for m in members if m.get("creation")]
+        ref = min(getdate(str(c)[:10]) for c in creations) if creations else today
     else:
-        # Time since last CO visit — how long since the stage last moved
-        if lv_raw:
-            ref = getdate(str(lv_raw)[:10])
-        elif created:
-            ref = getdate(str(created)[:10])
+        # How long since the most recent CO visit to any household member
+        visits = [m.get("last_visited_at") for m in members if m.get("last_visited_at")]
+        if visits:
+            ref = max(getdate(str(v)[:10]) for v in visits)
         else:
-            ref = today
+            creations = [m.get("creation") for m in members if m.get("creation")]
+            ref = min(getdate(str(c)[:10]) for c in creations) if creations else today
 
     days = max(0, date_diff(today, ref))
     return stage, days
@@ -89,12 +102,12 @@ def get_columns(group_by):
     }.get(group_by, "")
 
     cols = [
-        {"fieldname": "group_label",        "label": group_label,   "fieldtype": "Data",  "width": 200},
+        {"fieldname": "group_label", "label": group_label, "fieldtype": "Data", "width": 200},
     ]
     if parent_label:
         cols.append({"fieldname": "parent_group", "label": parent_label, "fieldtype": "Data", "width": 150})
     cols += [
-        {"fieldname": "total",              "label": "Total",               "fieldtype": "Int",   "width": 70},
+        {"fieldname": "total",              "label": "Total HH",            "fieldtype": "Int",   "width": 80},
         {"fieldname": "unvisited",          "label": "Unvisited",           "fieldtype": "Int",   "width": 85},
         {"fieldname": "avg_days_unvisited", "label": "Avg Days (Unvisited)","fieldtype": "Float", "width": 150},
         {"fieldname": "pending_docs",       "label": "Pending Docs",        "fieldtype": "Int",   "width": 105},
@@ -111,8 +124,8 @@ def get_columns(group_by):
 
 
 def get_data(filters, group_by):
-    cond  = ""
-    vals  = {}
+    cond = ""
+    vals = {}
 
     if filters.get("street"):
         cond += " AND hh.street_name = %(street)s"
@@ -133,16 +146,16 @@ def get_data(filters, group_by):
         """
         SELECT
             ind.name              AS ind_name,
-            ind.name_of_the_individual AS ind_display,
             ind.visit_count,
             ind.aadhaar_status,
             ind.income_status,
             ind.last_visited_at,
             ind.creation,
-            sl.added_by_co        AS street_co_id,
-            sl.implementing_org   AS street_org,
+            hh.name               AS hh_name,
             hh.cmchis_status      AS hh_cmchis,
             hh.street_name        AS hh_street,
+            sl.added_by_co        AS street_co_id,
+            sl.implementing_org   AS street_org,
             sl.intervention_units AS iu_name,
             sl.street_name        AS street_label,
             iu.name_of_iu         AS iu_label,
@@ -170,39 +183,67 @@ def get_data(filters, group_by):
     if not rows:
         return []
 
-    # Aggregate
-    groups = {}   # key → { counters }
+    # ── Step 1: group individuals by household (hh.name) ──────────────────────
+    hh_map   = {}
+    hh_order = []
 
-    def _key_parent(r):
-        """Return (group_key, group_display, parent_display) for a row."""
+    for r in rows:
+        hh_key = r.get("hh_name") or r.get("ind_name")
+        if hh_key not in hh_map:
+            hh_map[hh_key] = {
+                "hh_cmchis":   r.get("hh_cmchis") or "",
+                "hh_street":   r.get("hh_street") or "",
+                "street_co_id":r.get("street_co_id"),
+                "street_org":  r.get("street_org"),
+                "iu_name":     r.get("iu_name"),
+                "iu_label":    r.get("iu_label"),
+                "iu_org":      r.get("iu_org"),
+                "street_label":r.get("street_label"),
+                "co_name":     r.get("co_name"),
+                "staff_org":   r.get("staff_org"),
+                "members":     [],
+            }
+            hh_order.append(hh_key)
+        hh_map[hh_key]["members"].append({
+            "visit_count":    r.get("visit_count"),
+            "aadhaar_status": r.get("aadhaar_status"),
+            "income_status":  r.get("income_status"),
+            "last_visited_at":r.get("last_visited_at"),
+            "creation":       r.get("creation"),
+        })
+
+    # ── Step 2: classify each household and aggregate by group ────────────────
+    def _key_label_parent(hh):
         if group_by == "CO":
-            key    = r.get("street_co_id") or "Unknown"
-            label  = r.get("co_name") or key
-            parent = r.get("iu_label") or r.get("iu_name") or ""
+            key    = hh.get("street_co_id") or "Unknown"
+            label  = hh.get("co_name") or key
+            parent = hh.get("iu_label") or hh.get("iu_name") or ""
         elif group_by == "Street":
-            key    = r.get("hh_street") or "Unknown"
-            label  = r.get("street_label") or key
-            parent = r.get("iu_label") or r.get("iu_name") or ""
+            key    = hh.get("hh_street") or "Unknown"
+            label  = hh.get("street_label") or key
+            parent = hh.get("iu_label") or hh.get("iu_name") or ""
         elif group_by == "Intervention Unit":
-            key    = r.get("iu_name") or "Unknown"
-            label  = r.get("iu_label") or key
-            parent = r.get("iu_org") or r.get("street_org") or r.get("staff_org") or ""
+            key    = hh.get("iu_name") or "Unknown"
+            label  = hh.get("iu_label") or key
+            parent = hh.get("iu_org") or hh.get("street_org") or hh.get("staff_org") or ""
         else:  # Implementing Org
-            key    = (r.get("iu_org") or r.get("street_org") or r.get("staff_org") or "Unknown")
+            key    = hh.get("iu_org") or hh.get("street_org") or hh.get("staff_org") or "Unknown"
             label  = key
             parent = ""
         return key, label, parent
 
-    for r in rows:
-        key, label, parent = _key_parent(r)
-        stage, days = _classify(r, r.get("hh_cmchis"))
+    groups = {}
+
+    for hh_key in hh_order:
+        hh = hh_map[hh_key]
+        stage, days = _classify_hh(hh["members"], hh["hh_cmchis"])
+        key, label, parent = _key_label_parent(hh)
 
         if key not in groups:
             groups[key] = {
                 "group_label":  label,
                 "parent_group": parent,
                 "total":        0,
-                # per-stage counters and day sums
                 STAGE_UNVISITED:  {"n": 0, "days": 0},
                 STAGE_PENDING:    {"n": 0, "days": 0},
                 STAGE_DOCS_READY: {"n": 0, "days": 0},
@@ -214,11 +255,8 @@ def get_data(filters, group_by):
 
         g = groups[key]
         g["total"] += 1
-
-        if stage in (STAGE_ACTIVE, STAGE_REJECTED):
-            g[stage]["n"] += 1
-        else:
-            g[stage]["n"]    += 1
+        g[stage]["n"] += 1
+        if stage not in (STAGE_ACTIVE, STAGE_REJECTED):
             g[stage]["days"] += days
             if days > g["max_days_stuck"]:
                 g["max_days_stuck"] = days
@@ -229,7 +267,7 @@ def get_data(filters, group_by):
 
     data = []
     for g in groups.values():
-        row = {
+        data.append({
             "group_label":        g["group_label"],
             "parent_group":       g["parent_group"],
             "total":              g["total"],
@@ -244,9 +282,7 @@ def get_data(filters, group_by):
             "active":             g[STAGE_ACTIVE]["n"],
             "rejected":           g[STAGE_REJECTED]["n"],
             "max_days_stuck":     g["max_days_stuck"],
-        }
-        data.append(row)
+        })
 
-    # Sort: most stuck first (max_days_stuck desc), then alphabetically
     data.sort(key=lambda r: (-r["max_days_stuck"], r["group_label"] or ""))
     return data
