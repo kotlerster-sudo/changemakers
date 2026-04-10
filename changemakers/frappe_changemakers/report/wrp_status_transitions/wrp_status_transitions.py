@@ -52,6 +52,7 @@ def execute(filters=None):
 def get_columns():
     return [
         {"fieldname": "label",           "label": "Group / Household",    "fieldtype": "Data",  "width": 230},
+        {"fieldname": "eligible_hh",     "label": "Total HH",             "fieldtype": "Int",   "width": 90},
         {"fieldname": "total_hh",        "label": "HH Changed",           "fieldtype": "Int",   "width": 100},
         {"fieldname": "aadhaar_received","label": "Aadhaar Received",      "fieldtype": "Int",   "width": 130},
         {"fieldname": "income_received", "label": "Income Cert Ready",     "fieldtype": "Int",   "width": 130},
@@ -63,6 +64,56 @@ def get_columns():
         {"fieldname": "detail",          "label": "Transition",            "fieldtype": "Data",  "width": 260},
         {"fieldname": "changed_on",      "label": "Date",                  "fieldtype": "Date",  "width": 100},
     ]
+
+
+# ── Total eligible HH per group (denominator) ─────────────────────────────────
+
+def _get_eligible_hh_totals(group_by, filters):
+    """Return {group_key: total_eligible_hh} from the actual HH table."""
+    cond = ""
+    vals = {}
+
+    if filters.get("intervention_unit"):
+        cond += " AND sl.intervention_units = %(intervention_unit)s"
+        vals["intervention_unit"] = filters["intervention_unit"]
+    if filters.get("street"):
+        cond += " AND sl.name = %(street)s"
+        vals["street"] = filters["street"]
+
+    wrp_roles = {"WRP-PM", "WRP-AC", "WRP-MIS"}
+    if wrp_roles.intersection(set(frappe.get_roles(frappe.session.user))):
+        org = frappe.db.get_value(
+            "Staff details - WRP", {"mail_id": frappe.session.user}, "organisation"
+        )
+        if org:
+            cond += " AND sl.implementing_org = %(user_org)s"
+            vals["user_org"] = org
+
+    group_field = {
+        "CO":               "sl.added_by_co",
+        "AC":               "co_staff.ac_name",
+        "Project Manager":  "co_staff.pm_name",
+        "Intervention Unit":"sl.intervention_units",
+        "Street":           "sl.name",
+    }.get(group_by, "sl.implementing_org")
+
+    rows = frappe.db.sql(
+        """
+        SELECT {gf} AS gkey, COUNT(DISTINCT hh.name) AS total_hh
+        FROM `tabHousehold Profile-WRP` hh
+        INNER JOIN `tabIndividual Profile-WRP` ind
+            ON ind.hhid = hh.name AND ind.status = 'Active- ஆக்டிவ்'
+        LEFT JOIN `tabStreet List  - WRP` sl ON sl.name = hh.street_name
+        LEFT JOIN `tabStaff details - WRP` co_staff ON co_staff.name = sl.added_by_co
+        WHERE hh.survay_status    = 'Occupied/உள்ளனர்'
+          AND hh.availability_for = 'Going Ahead/துவங்கலாம்'
+          {cond}
+        GROUP BY {gf}
+        """.format(gf=group_field, cond=cond),
+        vals,
+        as_dict=True,
+    )
+    return {r["gkey"]: r["total_hh"] for r in rows if r.get("gkey")}
 
 
 # ── Data ──────────────────────────────────────────────────────────────────────
@@ -119,6 +170,8 @@ def get_data_and_chart(filters, group_by):
 
     if not rows:
         return [], None
+
+    eligible_totals = _get_eligible_hh_totals(group_by, filters)
 
     def _group_key(r):
         if group_by == "CO":
@@ -224,7 +277,7 @@ def get_data_and_chart(filters, group_by):
     CAT_ORDER = ["aadhaar_received", "income_received",
                  "cmchis_applied", "cmchis_active", "rejected", "other_changes"]
     EMPTY = {
-        "total_hh": "", "aadhaar_received": "", "income_received": "",
+        "eligible_hh": "", "total_hh": "", "aadhaar_received": "", "income_received": "",
         "cmchis_applied": "", "cmchis_active": "", "rejected": "",
         "other_changes": "",
     }
@@ -234,6 +287,7 @@ def get_data_and_chart(filters, group_by):
         g = groups[gkey]
         data.append({
             "label":           g["label"],
+            "eligible_hh":     eligible_totals.get(gkey) or "",
             "total_hh":        len(g["hh_set"]),
             "aadhaar_received":g["aadhaar_received"],
             "income_received": g["income_received"],
