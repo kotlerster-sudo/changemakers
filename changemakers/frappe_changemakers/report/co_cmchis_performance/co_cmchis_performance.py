@@ -2,12 +2,6 @@ import frappe
 
 
 def _user_org_filter():
-    """
-    Returns (cond, vals) to restrict data to the current user's implementing org
-    when they hold a WRP-PM / WRP-AC / WRP-MIS role.
-    Returns ("", {}) for unrestricted roles.
-    Returns None when a WRP user has no staff record (no data should be shown).
-    """
     wrp_roles = {"WRP-PM", "WRP-AC", "WRP-MIS"}
     if not wrp_roles.intersection(set(frappe.get_roles(frappe.session.user))):
         return "", {}
@@ -17,161 +11,238 @@ def _user_org_filter():
     return " AND sl.implementing_org = %(user_org)s", {"user_org": org}
 
 
+# ── HH-level helpers (same rule as pipeline dashboard) ────────────────────────
+
+AADHAAR_RECEIVED = "Aadhaar Received"
+INCOME_READY = {"Income Cert Received", "Income Cert Expired"}
+
+
+def _hh_closer(members):
+    for m in members:
+        if (m.get("aadhaar_status") or "") == AADHAAR_RECEIVED and \
+           (m.get("income_status") or "") in INCOME_READY:
+            return True
+    return False
+
+
+def _hh_bucket(hh_cmchis, max_visits, members):
+    c = (hh_cmchis or "").lower()
+    if "active" in c:
+        return "active"
+    if "rejected" in c:
+        return "rejected"
+    if "applied" in c and "not" not in c:
+        return "applied"
+    if int(max_visits or 0) == 0:
+        return "unvisited"
+    if _hh_closer(members):
+        return "docs_ready"
+    return "pending_docs"
+
+
+# ── Columns ───────────────────────────────────────────────────────────────────
+
 def execute(filters=None):
     filters = filters or {}
-    columns = get_columns()
-    data = get_data(filters)
-    return columns, data
+    return get_columns(), get_data(filters)
 
 
 def get_columns():
     return [
-        {"fieldname": "co_name", "label": "CO Name", "fieldtype": "Data", "width": 180},
-        {"fieldname": "intervention_unit", "label": "Intervention Unit", "fieldtype": "Link",
-         "options": "Intervention Units-WRP", "width": 160},
-        {"fieldname": "street", "label": "Street", "fieldtype": "Data", "width": 140},
-        {"fieldname": "total_hh", "label": "Total HH", "fieldtype": "Int", "width": 90},
-        {"fieldname": "unvisited", "label": "Unvisited", "fieldtype": "Int", "width": 90},
-        {"fieldname": "pending_docs", "label": "Pending Docs", "fieldtype": "Int", "width": 110},
-        {"fieldname": "docs_ready", "label": "Docs Ready", "fieldtype": "Int", "width": 100},
-        {"fieldname": "applied", "label": "Applied", "fieldtype": "Int", "width": 80},
-        {"fieldname": "rejected", "label": "Rejected", "fieldtype": "Int", "width": 80},
-        {"fieldname": "active", "label": "Active", "fieldtype": "Int", "width": 80},
-        {"fieldname": "pct_active", "label": "% CMCHIS Active", "fieldtype": "Percent", "width": 130},
+        {"fieldname": "label",        "label": "CO / Street",        "fieldtype": "Data",    "width": 220},
+        {"fieldname": "iu",           "label": "Intervention Unit",  "fieldtype": "Data",    "width": 150},
+        {"fieldname": "total_hh",     "label": "Total HH",           "fieldtype": "Int",     "width": 90},
+        {"fieldname": "unvisited",    "label": "Unvisited",          "fieldtype": "Int",     "width": 90},
+        {"fieldname": "pending_docs", "label": "Pending Docs",       "fieldtype": "Int",     "width": 110},
+        {"fieldname": "docs_ready",   "label": "Docs Ready",         "fieldtype": "Int",     "width": 100},
+        {"fieldname": "applied",      "label": "Applied",            "fieldtype": "Int",     "width": 80},
+        {"fieldname": "active",       "label": "Active",             "fieldtype": "Int",     "width": 80},
+        {"fieldname": "rejected",     "label": "Rejected",           "fieldtype": "Int",     "width": 80},
+        {"fieldname": "pct_active",   "label": "% Active",           "fieldtype": "Percent", "width": 95},
     ]
 
 
+# ── Data ──────────────────────────────────────────────────────────────────────
+
 def get_data(filters):
-    # Build Street filter conditions
-    street_conditions = ""
-    street_values = {}
+    cond = ""
+    vals = {}
 
     if filters.get("street"):
-        street_conditions += " AND sl.name = %(street)s"
-        street_values["street"] = filters["street"]
-
+        cond += " AND sl.name = %(street)s"
+        vals["street"] = filters["street"]
     if filters.get("intervention_unit"):
-        street_conditions += " AND sl.intervention_units = %(intervention_unit)s"
-        street_values["intervention_unit"] = filters["intervention_unit"]
+        cond += " AND sl.intervention_units = %(intervention_unit)s"
+        vals["intervention_unit"] = filters["intervention_unit"]
 
     org_filter = _user_org_filter()
     if org_filter is None:
         return []
     org_cond, org_vals = org_filter
-    street_conditions += org_cond
-    street_values.update(org_vals)
+    cond += org_cond
+    vals.update(org_vals)
 
-    # Fetch all matching streets with their CO (added_by_co) and IU
-    streets = frappe.db.sql(
+    rows = frappe.db.sql(
         """
         SELECT
-            sl.name        AS street_name,
-            sl.street_name AS street_label,
-            sl.intervention_units AS intervention_unit,
-            sl.added_by_co AS co_staff_id
-        FROM `tabStreet List  - WRP` sl
-        WHERE sl.added_by_co IS NOT NULL
-              AND sl.added_by_co != ''
-              {conditions}
-        ORDER BY sl.added_by_co, sl.intervention_units, sl.name
-        """.format(conditions=street_conditions),
-        street_values,
+            ind.name                    AS ind_id,
+            ind.visit_count,
+            ind.aadhaar_status,
+            ind.income_status,
+            hh.name                     AS hh_name,
+            hh.cmchis_status            AS hh_cmchis,
+            sl.street_name              AS street_label,
+            sl.name                     AS street_id,
+            sl.added_by_co              AS co_id,
+            sl.intervention_units       AS iu_id,
+            iu.name_of_iu               AS iu_label,
+            co_staff.full_name          AS co_name
+        FROM `tabIndividual Profile-WRP` ind
+        INNER JOIN `tabHousehold Profile-WRP` hh
+            ON hh.name = ind.hhid
+           AND hh.survay_status    = 'Occupied/உள்ளனர்'
+           AND hh.availability_for = 'Going Ahead/துவங்கலாம்'
+        LEFT JOIN `tabStreet List  - WRP` sl
+            ON sl.name = hh.street_name
+        LEFT JOIN `tabIntervention Units-WRP` iu
+            ON iu.name = sl.intervention_units
+        LEFT JOIN `tabStaff details - WRP` co_staff
+            ON co_staff.name = sl.added_by_co
+        WHERE ind.status = 'Active- ஆக்டிவ்'
+              {cond}
+        """.format(cond=cond),
+        vals,
         as_dict=True,
     )
 
-    if not streets:
+    if not rows:
         return []
 
-    # Get all CO staff names in one query
-    co_ids = list({s["co_staff_id"] for s in streets if s.get("co_staff_id")})
-    staff_rows = frappe.get_all(
-        "Staff details - WRP",
-        filters={"name": ["in", co_ids]},
-        fields=["name", "full_name"],
-    )
-    staff_name_map = {r["name"]: r["full_name"] for r in staff_rows}
+    # ── Step 1: group individuals by household ────────────────────────────────
+    hh_map   = {}
+    hh_order = []
 
-    # Aggregate HH counts per street
-    street_names = [s["street_name"] for s in streets]
-
-    hh_rows = frappe.db.sql(
-        """
-        SELECT
-            hh.street_name,
-            hh.cmchis_status,
-            hh.survay_status,
-            COUNT(*) AS cnt
-        FROM `tabHousehold Profile-WRP` hh
-        WHERE hh.street_name IN %(streets)s
-        GROUP BY hh.street_name, hh.cmchis_status, hh.survay_status
-        """,
-        {"streets": street_names},
-        as_dict=True,
-    )
-
-    # Build per-street counter dict
-    # cmchis_status values observed: 'CMCHIS Active', 'Applied', 'Rejected',
-    #   'Documents Ready', 'Pending Documents', None/''
-    # survay_status: 'Visited', 'Not Visited' (used for unvisited count)
-    street_stats = {}
-    for row in hh_rows:
-        sn = row["street_name"]
-        if sn not in street_stats:
-            street_stats[sn] = {
-                "total_hh": 0,
-                "unvisited": 0,
-                "pending_docs": 0,
-                "docs_ready": 0,
-                "applied": 0,
-                "rejected": 0,
-                "active": 0,
+    for r in rows:
+        hh_name = r.get("hh_name") or r.get("ind_id")
+        if hh_name not in hh_map:
+            hh_map[hh_name] = {
+                "hh_cmchis":    r.get("hh_cmchis") or "",
+                "street_id":    r.get("street_id") or "",
+                "street_label": r.get("street_label") or "",
+                "co_id":        r.get("co_id") or "Unassigned",
+                "co_name":      r.get("co_name") or r.get("co_id") or "Unassigned",
+                "iu_id":        r.get("iu_id") or "",
+                "iu_label":     r.get("iu_label") or r.get("iu_id") or "",
+                "members":      [],
             }
-        s = street_stats[sn]
-        cnt = row["cnt"] or 0
-        s["total_hh"] += cnt
+            hh_order.append(hh_name)
+        hh_map[hh_name]["members"].append({
+            "visit_count":    r.get("visit_count"),
+            "aadhaar_status": r.get("aadhaar_status"),
+            "income_status":  r.get("income_status"),
+        })
 
-        status = (row["cmchis_status"] or "").strip()
-        survey = (row["survay_status"] or "").strip().lower()
+    # ── Step 2: classify each household ──────────────────────────────────────
+    for hh_name in hh_order:
+        hh = hh_map[hh_name]
+        members = hh["members"]
+        max_visits = max(int(m.get("visit_count") or 0) for m in members)
+        hh["bucket"] = _hh_bucket(hh["hh_cmchis"], max_visits, members)
 
-        if survey in ("not visited", "not_visited", "unvisited"):
-            s["unvisited"] += cnt
-        elif status == "CMCHIS Active":
-            s["active"] += cnt
-        elif status == "Applied":
-            s["applied"] += cnt
-        elif status == "Rejected":
-            s["rejected"] += cnt
-        elif status == "Documents Ready":
-            s["docs_ready"] += cnt
-        else:
-            # Pending Documents or blank — count as pending if visited
-            s["pending_docs"] += cnt
+    # ── Step 3: aggregate by CO → Street ─────────────────────────────────────
+    def _empty_counter():
+        return {"total_hh": 0, "unvisited": 0, "pending_docs": 0,
+                "docs_ready": 0, "applied": 0, "active": 0, "rejected": 0}
+
+    cos     = {}   # co_id → {meta, streets: {street_id → counter}}
+    co_order = []
+
+    for hh_name in hh_order:
+        hh     = hh_map[hh_name]
+        co_id  = hh["co_id"]
+        st_id  = hh["street_id"] or "unknown"
+        bucket = hh["bucket"]
+
+        if co_id not in cos:
+            cos[co_id] = {
+                "co_name":  hh["co_name"],
+                "iu_label": hh["iu_label"],
+                "totals":   _empty_counter(),
+                "streets":  {},
+                "st_order": [],
+            }
+            co_order.append(co_id)
+
+        co = cos[co_id]
+        co["totals"]["total_hh"] += 1
+        co["totals"][bucket]     += 1
+
+        if st_id not in co["streets"]:
+            co["streets"][st_id] = {
+                "label": hh["street_label"] or st_id,
+                **_empty_counter(),
+            }
+            co["st_order"].append(st_id)
+
+        co["streets"][st_id]["total_hh"] += 1
+        co["streets"][st_id][bucket]     += 1
+
+    # Sort COs: highest % active first
+    co_order.sort(key=lambda k: -(
+        cos[k]["totals"]["active"] / max(cos[k]["totals"]["total_hh"], 1)
+    ))
+
+    # ── Step 4: build output rows ─────────────────────────────────────────────
+    EMPTY_NUMS = {
+        "total_hh": "", "unvisited": "", "pending_docs": "",
+        "docs_ready": "", "applied": "", "active": "", "rejected": "",
+        "pct_active": "",
+    }
+
+    def _pct(t):
+        return round(t["active"] / t["total_hh"] * 100, 1) if t["total_hh"] else 0.0
 
     data = []
-    for st in streets:
-        sn = st["street_name"]
-        stats = street_stats.get(sn, {
-            "total_hh": 0, "unvisited": 0, "pending_docs": 0,
-            "docs_ready": 0, "applied": 0, "rejected": 0, "active": 0,
-        })
-        total = stats["total_hh"] or 0
-        active = stats["active"] or 0
-        pct = round((active / total) * 100, 1) if total else 0.0
-
+    for co_id in co_order:
+        co = cos[co_id]
+        t  = co["totals"]
         data.append({
-            "co_name": staff_name_map.get(st["co_staff_id"], st["co_staff_id"]),
-            "intervention_unit": st["intervention_unit"],
-            "street": st["street_label"] or sn,
-            "total_hh": total,
-            "unvisited": stats["unvisited"],
-            "pending_docs": stats["pending_docs"],
-            "docs_ready": stats["docs_ready"],
-            "applied": stats["applied"],
-            "rejected": stats["rejected"],
-            "active": active,
-            "pct_active": pct,
+            "label":        co["co_name"],
+            "iu":           co["iu_label"],
+            "total_hh":     t["total_hh"],
+            "unvisited":    t["unvisited"],
+            "pending_docs": t["pending_docs"],
+            "docs_ready":   t["docs_ready"],
+            "applied":      t["applied"],
+            "active":       t["active"],
+            "rejected":     t["rejected"],
+            "pct_active":   _pct(t),
+            "indent":       0,
+            "bold":         1,
         })
 
-    # Sort by % Active descending, then CO name
-    data.sort(key=lambda r: (-r["pct_active"], r["co_name"] or ""))
+        # Street sub-rows sorted by % active descending
+        sorted_streets = sorted(
+            co["st_order"],
+            key=lambda sid: -(co["streets"][sid]["active"] / max(co["streets"][sid]["total_hh"], 1))
+        )
+        for st_id in sorted_streets:
+            st = co["streets"][st_id]
+            row = dict(EMPTY_NUMS)
+            row.update({
+                "label":        st["label"],
+                "iu":           "",
+                "total_hh":     st["total_hh"],
+                "unvisited":    st["unvisited"],
+                "pending_docs": st["pending_docs"],
+                "docs_ready":   st["docs_ready"],
+                "applied":      st["applied"],
+                "active":       st["active"],
+                "rejected":     st["rejected"],
+                "pct_active":   _pct(st),
+                "indent":       1,
+                "bold":         0,
+            })
+            data.append(row)
+
     return data

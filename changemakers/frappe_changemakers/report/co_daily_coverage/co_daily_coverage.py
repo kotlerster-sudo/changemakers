@@ -12,13 +12,51 @@ def _user_org_filter():
     return " AND sl.implementing_org = %(user_org)s", {"user_org": org}
 
 
+# ── HH-level helpers (same rule as pipeline dashboard) ────────────────────────
+
+AADHAAR_RECEIVED = "Aadhaar Received"
+INCOME_READY = {"Income Cert Received", "Income Cert Expired"}
+
+
+def _hh_closer(members):
+    for m in members:
+        if (m.get("aadhaar_status") or "") == AADHAAR_RECEIVED and \
+           (m.get("income_status") or "") in INCOME_READY:
+            return True
+    return False
+
+
+def _hh_stage_label(hh_cmchis, max_visits, members):
+    c = (hh_cmchis or "").lower()
+    if "active" in c:
+        return "CMCHIS Active"
+    if "rejected" in c:
+        return "Rejected"
+    if "applied" in c and "not" not in c:
+        return "Applied"
+    if max_visits == 1:
+        return "First Visit"
+    if _hh_closer(members):
+        return "Docs Ready – Follow-up"
+    return "Pending Docs – Follow-up"
+
+
+def _hh_visit_type(max_visits, members):
+    """Classify the household's visit into first / doc / regular."""
+    if max_visits == 1:
+        return "first"
+    if _hh_closer(members):
+        return "doc"
+    return "regular"
+
+
+# ── Columns ───────────────────────────────────────────────────────────────────
+
 def execute(filters=None):
     filters = filters or {}
     if not filters.get("date"):
         filters["date"] = nowdate()
-    columns = get_columns()
-    data = get_data(filters)
-    return columns, data
+    return get_columns(), get_data(filters)
 
 
 def get_columns():
@@ -36,31 +74,7 @@ def get_columns():
     ]
 
 
-def _stage_label(visit_count, aadhaar_status, income_status, hh_cmchis):
-    c = (hh_cmchis or "").lower()
-    if "active" in c:
-        return "CMCHIS Active"
-    if "rejected" in c:
-        return "Rejected"
-    if "applied" in c and "not" not in c:
-        return "Applied"
-    if visit_count == 1:
-        return "First Visit"
-    has_a = "Received" in (aadhaar_status or "")
-    has_i = "Received" in (income_status or "")
-    if has_a and has_i:
-        return "Docs Ready – Follow-up"
-    return "Pending Docs – Follow-up"
-
-
-def _visit_type(visit_count, aadhaar_status, income_status):
-    """Classify visit into the three daily-plan bucket types."""
-    if (visit_count or 0) == 1:
-        return "first"
-    if "Received" in (aadhaar_status or "") and "Received" in (income_status or ""):
-        return "doc"
-    return "regular"
-
+# ── Data ──────────────────────────────────────────────────────────────────────
 
 def get_data(filters):
     date_filter = filters.get("date") or nowdate()
@@ -81,15 +95,17 @@ def get_data(filters):
     cond += org_cond
     vals.update(org_vals)
 
+    # Fetch all individuals whose last_visited_at is today.
+    # We then group by household — a household is "visited today" if ANY member was.
     rows = frappe.db.sql(
         """
         SELECT
             ind.name              AS ind_id,
-            ind.name_of_the_individual AS ind_name,
             ind.visit_count,
             ind.aadhaar_status,
             ind.income_status,
             ind.last_visited_at,
+            hh.name               AS hh_name,
             hh.cmchis_status      AS hh_cmchis,
             hh.respondent         AS hh_respondent,
             hh.street_name        AS hh_street,
@@ -110,7 +126,6 @@ def get_data(filters):
         WHERE ind.status = 'Active- ஆக்டிவ்'
           AND DATE(ind.last_visited_at) = %(date)s
           {cond}
-        ORDER BY staff.full_name, sl.street_name, ind.name_of_the_individual
         """.format(cond=cond),
         vals,
         as_dict=True,
@@ -119,38 +134,78 @@ def get_data(filters):
     if not rows:
         return []
 
-    # Group by CO
-    co_groups = {}
-    co_order = []
+    # ── Step 1: group individuals by household ────────────────────────────────
+    hh_map   = {}
+    hh_order = []
+
     for r in rows:
-        co_id = r.get("co_id") or "Unassigned"
+        hh_name = r.get("hh_name") or r.get("ind_id")
+        if hh_name not in hh_map:
+            hh_map[hh_name] = {
+                "hh_name":    hh_name,
+                "respondent": r.get("hh_respondent") or "",
+                "hh_cmchis":  r.get("hh_cmchis") or "",
+                "street":     r.get("street_label") or r.get("hh_street") or "",
+                "iu":         r.get("iu_label") or r.get("iu_name") or "",
+                "co_id":      r.get("co_id"),
+                "co_name":    r.get("co_name") or "",
+                "members":    [],
+            }
+            hh_order.append(hh_name)
+        hh_map[hh_name]["members"].append({
+            "visit_count":    r.get("visit_count"),
+            "aadhaar_status": r.get("aadhaar_status"),
+            "income_status":  r.get("income_status"),
+        })
+
+    # ── Step 2: classify each household ──────────────────────────────────────
+    for hh_name in hh_order:
+        hh = hh_map[hh_name]
+        members = hh["members"]
+        max_visits = max(int(m.get("visit_count") or 0) for m in members)
+        hh["max_visits"] = max_visits
+        hh["stage"]      = _hh_stage_label(hh["hh_cmchis"], max_visits, members)
+        hh["visit_type"] = _hh_visit_type(max_visits, members)
+
+    # ── Step 3: group households by CO ────────────────────────────────────────
+    co_groups = {}
+    co_order  = []
+
+    for hh_name in hh_order:
+        hh   = hh_map[hh_name]
+        co_id = hh.get("co_id") or "Unassigned"
         if co_id not in co_groups:
             co_groups[co_id] = {
-                "co_name": r.get("co_name") or co_id,
-                "iu": r.get("iu_label") or r.get("iu_name") or "",
+                "co_name":    hh.get("co_name") or co_id,
+                "iu":         hh.get("iu") or "",
                 "households": [],
             }
             co_order.append(co_id)
-        co_groups[co_id]["households"].append(r)
+        co_groups[co_id]["households"].append(hh)
+
+    # ── Step 4: build output rows ─────────────────────────────────────────────
+    EMPTY = {
+        "intervention_unit": "", "street": "", "visited": "",
+        "target": "", "coverage_pct": "", "first_visits": "",
+        "doc_followups": "", "regular_followups": "", "stage": "",
+    }
 
     data = []
     for co_id in co_order:
-        co = co_groups[co_id]
-        hh_list = co["households"]
-        visited = len(hh_list)
+        co   = co_groups[co_id]
+        hhs  = co["households"]
+        total = len(hhs)
+        first_v = sum(1 for h in hhs if h["visit_type"] == "first")
+        doc_v   = sum(1 for h in hhs if h["visit_type"] == "doc")
+        reg_v   = total - first_v - doc_v
 
-        first_v = sum(1 for h in hh_list if _visit_type(h.visit_count, h.aadhaar_status, h.income_status) == "first")
-        doc_v   = sum(1 for h in hh_list if _visit_type(h.visit_count, h.aadhaar_status, h.income_status) == "doc")
-        reg_v   = visited - first_v - doc_v
-
-        # CO summary row
         data.append({
             "label":             co["co_name"],
             "intervention_unit": co["iu"],
             "street":            "",
-            "visited":           visited,
+            "visited":           total,
             "target":            30,
-            "coverage_pct":      round(visited / 30 * 100, 1),
+            "coverage_pct":      round(total / 30 * 100, 1),
             "first_visits":      first_v,
             "doc_followups":     doc_v,
             "regular_followups": reg_v,
@@ -159,24 +214,19 @@ def get_data(filters):
             "bold":              1,
         })
 
-        # Household detail rows
-        for h in hh_list:
-            vc = int(h.get("visit_count") or 0)
-            stage = _stage_label(vc, h.aadhaar_status, h.income_status, h.hh_cmchis)
-            vtype = _visit_type(vc, h.aadhaar_status, h.income_status)
-            data.append({
-                "label":             h.get("ind_name") or h.get("hh_respondent") or h.get("ind_id"),
-                "intervention_unit": "",
-                "street":            h.get("street_label") or h.get("hh_street") or "",
+        for hh in hhs:
+            row = dict(EMPTY)
+            row.update({
+                "label":             hh.get("respondent") or hh.get("hh_name"),
+                "street":            hh.get("street") or "",
                 "visited":           1,
-                "target":            "",
-                "coverage_pct":      "",
-                "first_visits":      1 if vtype == "first" else "",
-                "doc_followups":     1 if vtype == "doc" else "",
-                "regular_followups": 1 if vtype == "regular" else "",
-                "stage":             stage,
+                "first_visits":      1 if hh["visit_type"] == "first" else "",
+                "doc_followups":     1 if hh["visit_type"] == "doc" else "",
+                "regular_followups": 1 if hh["visit_type"] == "regular" else "",
+                "stage":             hh["stage"],
                 "indent":            1,
                 "bold":              0,
             })
+            data.append(row)
 
     return data
