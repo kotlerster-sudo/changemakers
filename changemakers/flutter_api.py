@@ -1,4 +1,5 @@
 import frappe
+import json
 from frappe import _
 
 
@@ -165,80 +166,107 @@ def get_daily_workplan(force_refresh=0):
             else:
                 payload["workplan"]["pending_docs"].append(data)
 
-        # Pool 1 — Unvisited (9): max_visits==0, excludes active/rejected
-        unvisited_pool = []
-        # Pool 2 — Docs ready (9): both Aadhaar + Income received, CMCHIS not yet applied/active/rejected
-        docs_ready_pool = []
-        # Pool 3 — Follow-up (9): SLA overdue first, then longest idle
-        sla_pool = []
-        other_followup_pool = []
-        # Pool 4 — Active/Rejected, never visited (max 3, overflow only after Pools 1-3 exhausted)
-        active_rejected_pool = []
+        # ── Daily plan: fixed for the day, cached by CO + date ──────────────────
+        # Once generated, the same 30 HHs are returned for every call today.
+        # Only force_refresh=1 (manager/admin use) regenerates the plan.
+        today_str = str(frappe.utils.nowdate())
+        cache_key = f"wrp_daily_plan:{staff_member}:{today_str}"
 
-        for hid, data in hh_groups.items():
-            if not data["members"]:
-                continue
+        cached_hhids = None
+        if not int(force_refresh or 0):
+            try:
+                raw = frappe.cache().get_value(cache_key)
+                if raw:
+                    cached_hhids = json.loads(raw)
+            except Exception:
+                cached_hhids = None
 
-            is_terminal = data["is_active"] or data["is_rejected"]
+        if cached_hhids:
+            # Restore plan from cache with current HH data (statuses stay fresh)
+            selected = [
+                hh_groups[hid] for hid in cached_hhids
+                if hid in hh_groups and hh_groups[hid]["members"]
+            ]
+        else:
+            # Pool 1 — Unvisited (9): max_visits==0, excludes active/rejected
+            unvisited_pool = []
+            # Pool 2 — Docs ready (9): both Aadhaar + Income received, CMCHIS not yet applied/active/rejected
+            docs_ready_pool = []
+            # Pool 3 — Follow-up (9): SLA overdue first, then longest idle
+            sla_pool = []
+            other_followup_pool = []
+            # Pool 4 — Active/Rejected, never visited (max 3, overflow only after Pools 1-3 exhausted)
+            active_rejected_pool = []
 
-            # Active/Rejected with at least one visit → fully done, exclude from daily plan
-            if is_terminal and data["max_visits"] > 0:
-                continue
+            for hid, data in hh_groups.items():
+                if not data["members"]:
+                    continue
 
-            # Pool 4: active/rejected never visited
-            if is_terminal:
-                active_rejected_pool.append(data)
-                continue
+                is_terminal = data["is_active"] or data["is_rejected"]
 
-            # Pool 1: unvisited, not active/rejected
-            if data["max_visits"] == 0:
-                unvisited_pool.append(data)
-            # Pool 2: both docs received, CMCHIS not yet applied
-            elif data["has_aadhaar"] and data["has_income"] and not data["is_applied"]:
-                docs_ready_pool.append(data)
-            # Pool 3a: SLA overdue
-            elif data["has_sla_due"]:
-                sla_pool.append(data)
-            # Pool 3b: general follow-up
-            else:
-                other_followup_pool.append(data)
+                # Active/Rejected with at least one visit → fully done, exclude from daily plan
+                if is_terminal and data["max_visits"] > 0:
+                    continue
 
-        # Within each pool sort by street so CO walks one street at a time
-        def by_street(d):
-            return (d["street_name"], d["max_visits"])
+                # Pool 4: active/rejected never visited
+                if is_terminal:
+                    active_rejected_pool.append(data)
+                    continue
 
-        unvisited_pool.sort(key=by_street)
-        docs_ready_pool.sort(key=by_street)
-        # SLA pool: most overdue first, then street
-        sla_pool.sort(key=lambda d: (-d["max_days_overdue"], d["street_name"]))
-        # General followup: longest idle first, then street
-        other_followup_pool.sort(key=lambda d: (-(d["min_days_since_visit"] or 0), d["street_name"]))
-        active_rejected_pool.sort(key=by_street)
+                # Pool 1: unvisited, not active/rejected
+                if data["max_visits"] == 0:
+                    unvisited_pool.append(data)
+                # Pool 2: both docs received, CMCHIS not yet applied
+                elif data["has_aadhaar"] and data["has_income"] and not data["is_applied"]:
+                    docs_ready_pool.append(data)
+                # Pool 3a: SLA overdue
+                elif data["has_sla_due"]:
+                    sla_pool.append(data)
+                # Pool 3b: general follow-up
+                else:
+                    other_followup_pool.append(data)
 
-        followup_combined = sla_pool + other_followup_pool
+            # Within each pool sort by street so CO walks one street at a time
+            def by_street(d):
+                return (d["street_name"], d["max_visits"])
 
-        # Primary fill: 9 from each of Pools 1, 2, 3
-        selected = unvisited_pool[:9] + docs_ready_pool[:9] + followup_combined[:9]
+            unvisited_pool.sort(key=by_street)
+            docs_ready_pool.sort(key=by_street)
+            # SLA pool: most overdue first, then street
+            sla_pool.sort(key=lambda d: (-d["max_days_overdue"], d["street_name"]))
+            # General followup: longest idle first, then street
+            other_followup_pool.sort(key=lambda d: (-(d["min_days_since_visit"] or 0), d["street_name"]))
+            active_rejected_pool.sort(key=by_street)
 
-        # Overflow from Pools 1-3 to reach 30 before touching Pool 4
-        if len(selected) < 30:
-            used = {d["hhid"] for d in selected}
-            overflow = [d for d in (
-                unvisited_pool[9:] + docs_ready_pool[9:] + followup_combined[9:]
-            ) if d["hhid"] not in used]
-            selected += overflow[:30 - len(selected)]
+            followup_combined = sla_pool + other_followup_pool
 
-        # Pool 4 fills any remaining gap (max 3)
-        if len(selected) < 30:
-            used = {d["hhid"] for d in selected}
-            p4 = [d for d in active_rejected_pool if d["hhid"] not in used]
-            selected += p4[:min(3, 30 - len(selected))]
+            # Primary fill: 9 from each of Pools 1, 2, 3
+            selected = unvisited_pool[:9] + docs_ready_pool[:9] + followup_combined[:9]
 
-        # Final sort: group the whole list by street so the CO finishes
-        # one street before moving to the next. Within a street, preserve
-        # the pool priority order (unvisited → docs-ready → follow-up).
-        pool_rank = {d["hhid"]: i for i, d in enumerate(selected)}
-        selected.sort(key=lambda d: (d["street_name"], pool_rank[d["hhid"]]))
+            # Overflow from Pools 1-3 to reach 30 before touching Pool 4
+            if len(selected) < 30:
+                used = {d["hhid"] for d in selected}
+                overflow = [d for d in (
+                    unvisited_pool[9:] + docs_ready_pool[9:] + followup_combined[9:]
+                ) if d["hhid"] not in used]
+                selected += overflow[:30 - len(selected)]
+
+            # Pool 4 fills any remaining gap (max 3)
+            if len(selected) < 30:
+                used = {d["hhid"] for d in selected}
+                p4 = [d for d in active_rejected_pool if d["hhid"] not in used]
+                selected += p4[:min(3, 30 - len(selected))]
+
+            # Final sort: group by street so the CO finishes one street at a time.
+            pool_rank = {d["hhid"]: i for i, d in enumerate(selected)}
+            selected.sort(key=lambda d: (d["street_name"], pool_rank[d["hhid"]]))
+
+            # Save to cache — plan is fixed for the rest of today
+            frappe.cache().set_value(
+                cache_key,
+                json.dumps([d["hhid"] for d in selected]),
+                expires_in_sec=86400,
+            )
 
         payload["daily_plan"] = selected
 
