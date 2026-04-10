@@ -29,22 +29,6 @@
    "wildcard_filter": 0
   },
   {
-   "fieldname": "field_changed",
-   "fieldtype": "Select",
-   "label": "Status Field",
-   "mandatory": 0,
-   "options": "All\naadhaar_status\nincome_status\ncmchis_status",
-   "wildcard_filter": 0
-  },
-  {
-   "fieldname": "group_by",
-   "fieldtype": "Select",
-   "label": "Group By",
-   "mandatory": 1,
-   "options": "CO\nAC\nProject Manager\nIntervention Unit\nStreet\nImplementing Org",
-   "wildcard_filter": 0
-  },
-  {
    "fieldname": "intervention_unit",
    "fieldtype": "Link",
    "label": "Intervention Unit",

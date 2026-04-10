@@ -2,22 +2,25 @@
 WRP Status Logger
 -----------------
 Fires on before_save for Individual Profile-WRP and Household Profile-WRP.
-Writes one row to WRP Status Log for every tracked field that changes value.
+Writes one row to WRP Status Log for every tracked field that changes value,
+including the household's pipeline bucket before and after the change.
 
-Tracked fields:
-  Individual Profile-WRP  → aadhaar_status, income_status
-  Household Profile-WRP   → cmchis_status
+Pipeline buckets (in order):
+  unvisited → missing_both → missing_aadhaar / missing_income → docs_ready
+  → applied → active  (or → rejected at any point)
 """
 
 import frappe
 from frappe.utils import now_datetime
+
+AADHAAR_RECEIVED = "Aadhaar Received"
+INCOME_READY     = {"Income Cert Received", "Income Cert Expired"}
 
 IND_TRACKED = ["aadhaar_status", "income_status"]
 HH_TRACKED  = ["cmchis_status"]
 
 
 def _skip():
-    """Suppress logging during migrations, imports, fixture loads, and tests."""
     return (
         frappe.flags.in_migrate
         or frappe.flags.in_import
@@ -27,8 +30,67 @@ def _skip():
     )
 
 
+# ── Bucket computation ────────────────────────────────────────────────────────
+
+def _compute_hh_bucket(hh_name, hh_cmchis=None, ind_override=None):
+    """
+    Return the pipeline bucket for hh_name.
+
+    hh_cmchis     – pass the cmchis_status to use; if None, reads from DB.
+    ind_override  – {ind_name: {field: value, …}} to override one member's
+                    field values (used to simulate the post-save state while
+                    still in before_save, when DB still has old values).
+
+    Buckets: unvisited | missing_both | missing_aadhaar | missing_income
+             | docs_ready | applied | active | rejected
+    """
+    c = (hh_cmchis or "").lower()
+    if "active" in c:
+        return "active"
+    if "rejected" in c:
+        return "rejected"
+    if "applied" in c and "not" not in c:
+        return "applied"
+
+    members = frappe.db.sql(
+        """SELECT name, visit_count, aadhaar_status, income_status
+           FROM `tabIndividual Profile-WRP`
+           WHERE hhid = %(hh)s AND status = 'Active- ஆக்டிவ்'""",
+        {"hh": hh_name},
+        as_dict=True,
+    )
+
+    if ind_override:
+        for m in members:
+            if m["name"] in ind_override:
+                m.update(ind_override[m["name"]])
+
+    if not members:
+        return "unvisited"
+
+    max_visits = max(int(m.get("visit_count") or 0) for m in members)
+    if max_visits == 0:
+        return "unvisited"
+
+    # docs_ready: at least one member has BOTH aadhaar AND income
+    for m in members:
+        if (m.get("aadhaar_status") or "") == AADHAAR_RECEIVED and \
+           (m.get("income_status") or "") in INCOME_READY:
+            return "docs_ready"
+
+    has_aadhaar = any((m.get("aadhaar_status") or "") == AADHAAR_RECEIVED for m in members)
+    has_income  = any((m.get("income_status")  or "") in INCOME_READY      for m in members)
+
+    if has_aadhaar:
+        return "missing_income"   # has aadhaar but no one has both yet
+    if has_income:
+        return "missing_aadhaar"  # has income but no aadhaar
+    return "missing_both"
+
+
+# ── Context & insert ──────────────────────────────────────────────────────────
+
 def _get_hh_context(hh_name):
-    """Fetch CO / street / IU / org context for a household (single SQL call)."""
     rows = frappe.db.sql(
         """
         SELECT
@@ -61,20 +123,23 @@ def _get_hh_context(hh_name):
     return rows[0] if rows else {}
 
 
-def _insert_log(hh_name, individual, field, old_val, new_val, ctx):
-    now = str(now_datetime())
+def _insert_log(hh_name, individual, field, old_val, new_val,
+                old_bucket, new_bucket, ctx):
+    now  = str(now_datetime())
     user = frappe.session.user
     frappe.db.sql(
         """
         INSERT INTO `tabWRP Status Log`
             (name, hh_name, hhid, individual, field_changed,
-             old_value, new_value, changed_at, changed_by,
+             old_value, new_value, old_bucket, new_bucket,
+             changed_at, changed_by,
              co_id, co_name, ac_name, pm_name,
              street_name, intervention_unit, implementing_org,
              creation, modified, owner, modified_by, docstatus)
         VALUES
             (%(name)s, %(hh_name)s, %(hhid)s, %(individual)s, %(field)s,
-             %(old_val)s, %(new_val)s, %(now)s, %(user)s,
+             %(old_val)s, %(new_val)s, %(old_bucket)s, %(new_bucket)s,
+             %(now)s, %(user)s,
              %(co_id)s, %(co_name)s, %(ac_name)s, %(pm_name)s,
              %(street_name)s, %(intervention_unit)s, %(implementing_org)s,
              %(now)s, %(now)s, %(user)s, %(user)s, 0)
@@ -87,6 +152,8 @@ def _insert_log(hh_name, individual, field, old_val, new_val, ctx):
             "field":             field,
             "old_val":           old_val or "",
             "new_val":           new_val or "",
+            "old_bucket":        old_bucket or "",
+            "new_bucket":        new_bucket or "",
             "now":               now,
             "user":              user,
             "co_id":             ctx.get("co_id") or "",
@@ -100,23 +167,44 @@ def _insert_log(hh_name, individual, field, old_val, new_val, ctx):
     )
 
 
+# ── Hook handlers ─────────────────────────────────────────────────────────────
+
 def log_individual_status_change(doc, method):
     if _skip():
         return
     old_doc = doc.get_doc_before_save()
     if not old_doc:
-        return  # new record — no transition to log
+        return  # new record
 
-    changed_fields = [
-        f for f in IND_TRACKED
-        if old_doc.get(f) != doc.get(f)
-    ]
+    hh_name = doc.hhid
+    if not hh_name:
+        return
+
+    changed_fields = [f for f in IND_TRACKED if old_doc.get(f) != doc.get(f)]
     if not changed_fields:
         return
 
-    ctx = _get_hh_context(doc.hhid)
+    hh_cmchis = frappe.db.get_value("Household Profile-WRP", hh_name, "cmchis_status") or ""
+    ctx = _get_hh_context(hh_name)
+
+    # Before: DB still has old values for this individual (we're in before_save)
+    old_bucket = _compute_hh_bucket(hh_name, hh_cmchis=hh_cmchis)
+
+    # After: same DB, but override this individual with the incoming new values
+    new_bucket = _compute_hh_bucket(
+        hh_name,
+        hh_cmchis=hh_cmchis,
+        ind_override={doc.name: {
+            "aadhaar_status": doc.aadhaar_status or "",
+            "income_status":  doc.income_status  or "",
+            "visit_count":    doc.visit_count     or 0,
+        }},
+    )
+
     for field in changed_fields:
-        _insert_log(doc.hhid, doc.name, field, old_doc.get(field), doc.get(field), ctx)
+        _insert_log(hh_name, doc.name, field,
+                    old_doc.get(field), doc.get(field),
+                    old_bucket, new_bucket, ctx)
 
 
 def log_hh_status_change(doc, method):
@@ -126,13 +214,18 @@ def log_hh_status_change(doc, method):
     if not old_doc:
         return
 
-    changed_fields = [
-        f for f in HH_TRACKED
-        if old_doc.get(f) != doc.get(f)
-    ]
+    changed_fields = [f for f in HH_TRACKED if old_doc.get(f) != doc.get(f)]
     if not changed_fields:
         return
 
-    ctx = _get_hh_context(doc.name)
+    hh_name = doc.name
+    ctx = _get_hh_context(hh_name)
+
     for field in changed_fields:
-        _insert_log(doc.name, None, field, old_doc.get(field), doc.get(field), ctx)
+        old_val = old_doc.get(field) or ""
+        new_val = doc.get(field) or ""
+        # Bucket uses old/new cmchis_status; member state is unchanged
+        old_bucket = _compute_hh_bucket(hh_name, hh_cmchis=old_val)
+        new_bucket = _compute_hh_bucket(hh_name, hh_cmchis=new_val)
+        _insert_log(hh_name, None, field, old_val, new_val,
+                    old_bucket, new_bucket, ctx)

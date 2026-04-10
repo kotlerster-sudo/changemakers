@@ -11,6 +11,8 @@
   "field_changed",
   "old_value",
   "new_value",
+  "old_bucket",
+  "new_bucket",
   "changed_at",
   "changed_by",
   "co_id",
@@ -61,6 +63,21 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "New Value"
+  },
+  {
+   "fieldname": "old_bucket",
+   "fieldtype": "Select",
+   "label": "Old Bucket",
+   "options": "unvisited\nmissing_both\nmissing_aadhaar\nmissing_income\ndocs_ready\napplied\nactive\nrejected",
+   "search_index": 1
+  },
+  {
+   "fieldname": "new_bucket",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "New Bucket",
+   "options": "unvisited\nmissing_both\nmissing_aadhaar\nmissing_income\ndocs_ready\napplied\nactive\nrejected",
+   "search_index": 1
   },
   {
    "fieldname": "changed_at",

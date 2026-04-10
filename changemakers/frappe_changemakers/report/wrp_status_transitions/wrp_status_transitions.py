@@ -1,30 +1,28 @@
+"""
+WRP Status Transitions
+----------------------
+Time-series view of how households move between pipeline buckets each day.
+
+Pipeline buckets:
+  unvisited → missing_both → missing_aadhaar / missing_income → docs_ready
+  → applied → active  (or rejected at any stage)
+
+Transition categories tracked:
+  docs_completed  – any bucket → docs_ready          (both docs achieved)
+  aadhaar_step    – missing_both → missing_income     (aadhaar done, income pending)
+  income_step     – missing_both → missing_aadhaar    (income done, aadhaar pending)
+  cmchis_applied  – docs_ready → applied
+  cmchis_active   – applied → active
+  rejected        – any → rejected
+  no_change       – field changed but bucket unchanged
+"""
+
 import frappe
-from frappe.utils import getdate, nowdate, add_days, add_months, date_diff
-
-
-# ── Positive transition targets ───────────────────────────────────────────────
-
-AADHAAR_POSITIVE  = {"Aadhaar Received"}
-INCOME_POSITIVE   = {"Income Cert Received", "Income Cert Expired"}
-CMCHIS_APPLIED    = {"CMCHIS Applied – ETA 5d"}
-CMCHIS_ACTIVE     = {"CMCHIS Active"}
-CMCHIS_REJECTED   = {"Rejected"}
-
-
-def _user_org_filter():
-    wrp_roles = {"WRP-PM", "WRP-AC", "WRP-MIS"}
-    if not wrp_roles.intersection(set(frappe.get_roles(frappe.session.user))):
-        return "", {}
-    org = frappe.db.get_value(
-        "Staff details - WRP", {"mail_id": frappe.session.user}, "organisation"
-    )
-    if not org:
-        return None
-    return " AND log.implementing_org = %(user_org)s", {"user_org": org}
+from frappe.utils import getdate, nowdate, add_days, add_months
 
 
 def _date_range(filters):
-    today = getdate(nowdate())
+    today  = getdate(nowdate())
     period = filters.get("period") or "Last Month"
     if period == "Last Week":
         return str(add_days(today, -7)), str(today)
@@ -33,116 +31,90 @@ def _date_range(filters):
     if period == "Custom":
         return (
             str(getdate(filters.get("from_date") or add_months(today, -1))),
-            str(getdate(filters.get("to_date") or today)),
+            str(getdate(filters.get("to_date")   or today)),
         )
-    # Last Month (default)
     return str(add_months(today, -1)), str(today)
 
 
-# ── Columns ───────────────────────────────────────────────────────────────────
+def _classify(old_b, new_b):
+    if not old_b or not new_b:
+        return None   # pre-migration record without bucket data
+    if new_b == "docs_ready" and old_b != "docs_ready":
+        return "docs_completed"
+    if new_b == "applied":
+        return "cmchis_applied"
+    if new_b == "active":
+        return "cmchis_active"
+    if new_b == "rejected":
+        return "rejected"
+    if old_b == "missing_both" and new_b == "missing_income":
+        return "aadhaar_step"
+    if old_b == "missing_both" and new_b == "missing_aadhaar":
+        return "income_step"
+    if old_b == new_b:
+        return "no_change"
+    return None   # other lateral moves — not shown
+
+
+BUCKET_LABELS = {
+    "unvisited":      "Unvisited",
+    "missing_both":   "Missing Both",
+    "missing_aadhaar":"Missing Aadhaar",
+    "missing_income": "Missing Income",
+    "docs_ready":     "Docs Ready",
+    "applied":        "Applied",
+    "active":         "Active",
+    "rejected":       "Rejected",
+}
+
 
 def execute(filters=None):
     filters = filters or {}
-    group_by = filters.get("group_by") or "CO"
     columns = get_columns()
-    data, chart = get_data_and_chart(filters, group_by)
+    data, chart = get_data_and_chart(filters)
     return columns, data, None, chart
 
 
 def get_columns():
     return [
-        {"fieldname": "label",           "label": "Group / Household",    "fieldtype": "Data",  "width": 230},
-        {"fieldname": "eligible_hh",     "label": "Total HH",             "fieldtype": "Int",   "width": 90},
-        {"fieldname": "total_hh",        "label": "HH Changed",           "fieldtype": "Int",   "width": 100},
-        {"fieldname": "aadhaar_received","label": "Aadhaar Received",      "fieldtype": "Int",   "width": 130},
-        {"fieldname": "income_received", "label": "Income Cert Ready",     "fieldtype": "Int",   "width": 130},
-        {"fieldname": "cmchis_applied",  "label": "CMCHIS Applied",        "fieldtype": "Int",   "width": 120},
-        {"fieldname": "cmchis_active",   "label": "CMCHIS Active",         "fieldtype": "Int",   "width": 110},
-        {"fieldname": "rejected",        "label": "Rejected",              "fieldtype": "Int",   "width": 90},
-        {"fieldname": "other_changes",   "label": "Other Changes",         "fieldtype": "Int",   "width": 110},
-        {"fieldname": "sub_label",       "label": "HHID",                  "fieldtype": "Data",  "width": 150},
-        {"fieldname": "detail",          "label": "Transition",            "fieldtype": "Data",  "width": 260},
-        {"fieldname": "changed_on",      "label": "Date",                  "fieldtype": "Date",  "width": 100},
+        {"fieldname": "label",          "label": "Date / Household",    "fieldtype": "Data",  "width": 200},
+        {"fieldname": "docs_completed", "label": "→ Docs Ready",        "fieldtype": "Int",   "width": 110},
+        {"fieldname": "aadhaar_step",   "label": "Aadhaar Done (partial)","fieldtype": "Int", "width": 150},
+        {"fieldname": "income_step",    "label": "Income Done (partial)","fieldtype": "Int",   "width": 150},
+        {"fieldname": "cmchis_applied", "label": "→ Applied",           "fieldtype": "Int",   "width": 95},
+        {"fieldname": "cmchis_active",  "label": "→ Active",            "fieldtype": "Int",   "width": 90},
+        {"fieldname": "rejected",       "label": "→ Rejected",          "fieldtype": "Int",   "width": 95},
+        {"fieldname": "no_change",      "label": "Field Changed (No Move)","fieldtype": "Int","width": 170},
+        {"fieldname": "transition",     "label": "Transition",          "fieldtype": "Data",  "width": 260},
     ]
 
 
-# ── Total eligible HH per group (denominator) ─────────────────────────────────
+def get_data_and_chart(filters):
+    from_date, to_date = _date_range(filters)
 
-def _get_eligible_hh_totals(group_by, filters):
-    """Return {group_key: total_eligible_hh} from the actual HH table."""
     cond = ""
-    vals = {}
+    vals = {"from_date": from_date, "to_date": to_date}
 
     if filters.get("intervention_unit"):
-        cond += " AND sl.intervention_units = %(intervention_unit)s"
+        cond += " AND log.intervention_unit = %(intervention_unit)s"
         vals["intervention_unit"] = filters["intervention_unit"]
     if filters.get("street"):
-        cond += " AND sl.name = %(street)s"
+        cond += " AND log.street_name = %(street)s"
         vals["street"] = filters["street"]
+    if filters.get("co"):
+        cond += " AND log.co_id = %(co)s"
+        vals["co"] = filters["co"]
 
+    # Org-level access control
     wrp_roles = {"WRP-PM", "WRP-AC", "WRP-MIS"}
     if wrp_roles.intersection(set(frappe.get_roles(frappe.session.user))):
         org = frappe.db.get_value(
             "Staff details - WRP", {"mail_id": frappe.session.user}, "organisation"
         )
-        if org:
-            cond += " AND sl.implementing_org = %(user_org)s"
-            vals["user_org"] = org
-
-    group_field = {
-        "CO":               "sl.added_by_co",
-        "AC":               "co_staff.ac_name",
-        "Project Manager":  "co_staff.pm_name",
-        "Intervention Unit":"sl.intervention_units",
-        "Street":           "sl.name",
-    }.get(group_by, "sl.implementing_org")
-
-    rows = frappe.db.sql(
-        """
-        SELECT {gf} AS gkey, COUNT(DISTINCT hh.name) AS total_hh
-        FROM `tabHousehold Profile-WRP` hh
-        INNER JOIN `tabIndividual Profile-WRP` ind
-            ON ind.hhid = hh.name AND ind.status = 'Active- ஆக்டிவ்'
-        LEFT JOIN `tabStreet List  - WRP` sl ON sl.name = hh.street_name
-        LEFT JOIN `tabStaff details - WRP` co_staff ON co_staff.name = sl.added_by_co
-        WHERE hh.survay_status    = 'Occupied/உள்ளனர்'
-          AND hh.availability_for = 'Going Ahead/துவங்கலாம்'
-          {cond}
-        GROUP BY {gf}
-        """.format(gf=group_field, cond=cond),
-        vals,
-        as_dict=True,
-    )
-    return {r["gkey"]: r["total_hh"] for r in rows if r.get("gkey")}
-
-
-# ── Data ──────────────────────────────────────────────────────────────────────
-
-def get_data_and_chart(filters, group_by):
-    from_date, to_date = _date_range(filters)
-
-    cond = " AND DATE(log.changed_at) BETWEEN %(from_date)s AND %(to_date)s"
-    vals = {"from_date": from_date, "to_date": to_date}
-
-    field_filter = filters.get("field_changed")
-    if field_filter and field_filter != "All":
-        cond += " AND log.field_changed = %(field_changed)s"
-        vals["field_changed"] = field_filter
-
-    if filters.get("intervention_unit"):
-        cond += " AND log.intervention_unit = %(intervention_unit)s"
-        vals["intervention_unit"] = filters["intervention_unit"]
-
-    if filters.get("street"):
-        cond += " AND log.street_name = %(street)s"
-        vals["street"] = filters["street"]
-
-    org_filter = _user_org_filter()
-    if org_filter is None:
-        return [], None
-    org_cond, org_vals = org_filter
-    cond += org_cond
-    vals.update(org_vals)
+        if not org:
+            return [], None
+        cond += " AND log.implementing_org = %(user_org)s"
+        vals["user_org"] = org
 
     rows = frappe.db.sql(
         """
@@ -152,17 +124,18 @@ def get_data_and_chart(filters, group_by):
             log.field_changed,
             log.old_value,
             log.new_value,
-            DATE(log.changed_at)  AS changed_date,
-            log.co_id,
+            log.old_bucket,
+            log.new_bucket,
+            DATE(log.changed_at) AS changed_date,
             log.co_name,
-            log.ac_name,
-            log.pm_name,
             log.street_name,
-            log.intervention_unit,
-            log.implementing_org
+            log.intervention_unit
         FROM `tabWRP Status Log` log
-        WHERE 1=1 {cond}
-        ORDER BY log.hh_name, log.changed_at
+        WHERE log.old_bucket IS NOT NULL
+          AND log.old_bucket != ''
+          AND DATE(log.changed_at) BETWEEN %(from_date)s AND %(to_date)s
+          {cond}
+        ORDER BY log.changed_at DESC
         """.format(cond=cond),
         vals,
         as_dict=True,
@@ -171,179 +144,111 @@ def get_data_and_chart(filters, group_by):
     if not rows:
         return [], None
 
-    eligible_totals = _get_eligible_hh_totals(group_by, filters)
+    # ── Aggregate by date ─────────────────────────────────────────────────────
+    CATS = ["docs_completed", "aadhaar_step", "income_step",
+            "cmchis_applied", "cmchis_active", "rejected", "no_change"]
 
-    def _group_key(r):
-        if group_by == "CO":
-            return r.get("co_id") or "Unknown", r.get("co_name") or "Unknown"
-        if group_by == "AC":
-            v = r.get("ac_name") or "Unknown"
-            return v, v
-        if group_by == "Project Manager":
-            v = r.get("pm_name") or "Unknown"
-            return v, v
-        if group_by == "Intervention Unit":
-            v = r.get("intervention_unit") or "Unknown"
-            return v, v
-        if group_by == "Street":
-            v = r.get("street_name") or "Unknown"
-            return v, v
-        v = r.get("implementing_org") or "Unknown"
-        return v, v
+    def _empty():
+        return {c: 0 for c in CATS}
 
-    def _classify(r):
-        field = r.get("field_changed")
-        new   = r.get("new_value") or ""
-        if field == "aadhaar_status" and new in AADHAAR_POSITIVE:
-            return "aadhaar_received"
-        if field == "income_status" and new in INCOME_POSITIVE:
-            return "income_received"
-        if field == "cmchis_status" and new in CMCHIS_APPLIED:
-            return "cmchis_applied"
-        if field == "cmchis_status" and new in CMCHIS_ACTIVE:
-            return "cmchis_active"
-        if field == "cmchis_status" and new in CMCHIS_REJECTED:
-            return "rejected"
-        return "other_changes"
-
-    # ── Aggregate ─────────────────────────────────────────────────────────────
-    groups      = {}
-    group_order = []
-
-    # For chart: weekly buckets → transition type → count
-    chart_buckets = {}  # week_label → {transition: count}
+    dates      = {}   # date_str → counter + sub-rows
+    date_order = []
 
     for r in rows:
-        gkey, glabel = _group_key(r)
-        cat = _classify(r)
+        cat = _classify(r.get("old_bucket"), r.get("new_bucket"))
+        if cat is None:
+            continue
 
-        if gkey not in groups:
-            groups[gkey] = {
-                "label":           glabel,
-                "hh_set":          set(),
-                "aadhaar_received":0,
-                "income_received": 0,
-                "cmchis_applied":  0,
-                "cmchis_active":   0,
-                "rejected":        0,
-                "other_changes":   0,
-                "transitions":     [],
-            }
-            group_order.append(gkey)
+        d = str(r.get("changed_date") or "")
+        if d not in dates:
+            dates[d]     = {"counts": _empty(), "hhs": []}
+            date_order.append(d)
 
-        g = groups[gkey]
-        g["hh_set"].add(r.get("hh_name"))
-        g[cat] += 1
+        dates[d]["counts"][cat] += 1
 
-        old_v = r.get("old_value") or "—"
-        new_v = r.get("new_value") or "—"
+        old_label = BUCKET_LABELS.get(r.get("old_bucket"), r.get("old_bucket") or "—")
+        new_label = BUCKET_LABELS.get(r.get("new_bucket"), r.get("new_bucket") or "—")
         field_label = {
             "aadhaar_status": "Aadhaar",
             "income_status":  "Income",
             "cmchis_status":  "CMCHIS",
-        }.get(r.get("field_changed"), r.get("field_changed"))
+        }.get(r.get("field_changed"), r.get("field_changed") or "")
 
-        g["transitions"].append({
-            "hh_name":    r.get("hh_name") or "",
-            "hhid":       r.get("hhid") or "",
-            "detail":     f"{field_label}: {old_v} → {new_v}",
-            "changed_on": str(r.get("changed_date") or ""),
-            "cat":        cat,
+        dates[d]["hhs"].append({
+            "hh_name":   r.get("hh_name") or "",
+            "hhid":      r.get("hhid") or "",
+            "cat":       cat,
+            "transition": f"{old_label} → {new_label}  [{field_label}: {r.get('old_value') or '—'} → {r.get('new_value') or '—'}]",
         })
 
-        # Weekly bucket for chart
-        cd = r.get("changed_date")
-        if cd:
-            d = getdate(str(cd))
-            wlabel = f"{d.year}-W{d.isocalendar()[1]:02d}"
-            if wlabel not in chart_buckets:
-                chart_buckets[wlabel] = {
-                    "aadhaar_received": 0,
-                    "income_received":  0,
-                    "cmchis_applied":   0,
-                    "cmchis_active":    0,
-                }
-            if cat in chart_buckets[wlabel]:
-                chart_buckets[wlabel][cat] += 1
+    if not dates:
+        return [], None
 
-    # ── Sort groups: most active first ────────────────────────────────────────
-    group_order.sort(key=lambda k: -(
-        groups[k]["aadhaar_received"] +
-        groups[k]["income_received"] +
-        groups[k]["cmchis_applied"] +
-        groups[k]["cmchis_active"]
-    ))
-
-    CAT_ORDER = ["aadhaar_received", "income_received",
-                 "cmchis_applied", "cmchis_active", "rejected", "other_changes"]
-    EMPTY = {
-        "eligible_hh": "", "total_hh": "", "aadhaar_received": "", "income_received": "",
-        "cmchis_applied": "", "cmchis_active": "", "rejected": "",
-        "other_changes": "",
-    }
+    # ── Build output rows ─────────────────────────────────────────────────────
+    EMPTY_ROW = {c: "" for c in CATS}
+    EMPTY_ROW["transition"] = ""
 
     data = []
-    for gkey in group_order:
-        g = groups[gkey]
+    for d in date_order:
+        cnt = dates[d]["counts"]
         data.append({
-            "label":           g["label"],
-            "eligible_hh":     eligible_totals.get(gkey) or "",
-            "total_hh":        len(g["hh_set"]),
-            "aadhaar_received":g["aadhaar_received"],
-            "income_received": g["income_received"],
-            "cmchis_applied":  g["cmchis_applied"],
-            "cmchis_active":   g["cmchis_active"],
-            "rejected":        g["rejected"],
-            "other_changes":   g["other_changes"],
-            "sub_label":       "",
-            "detail":          "",
-            "changed_on":      "",
-            "indent":          0,
-            "bold":            1,
+            "label":          d,
+            "docs_completed": cnt["docs_completed"] or "",
+            "aadhaar_step":   cnt["aadhaar_step"]   or "",
+            "income_step":    cnt["income_step"]     or "",
+            "cmchis_applied": cnt["cmchis_applied"]  or "",
+            "cmchis_active":  cnt["cmchis_active"]   or "",
+            "rejected":       cnt["rejected"]        or "",
+            "no_change":      cnt["no_change"]       or "",
+            "transition":     "",
+            "indent":         0,
+            "bold":           1,
         })
 
-        sorted_t = sorted(g["transitions"], key=lambda x: (CAT_ORDER.index(x["cat"]), x["changed_on"]))
-        for t in sorted_t:
-            row = dict(EMPTY)
+        for hh in dates[d]["hhs"]:
+            row = dict(EMPTY_ROW)
             row.update({
-                "label":      t["hh_name"],
-                "sub_label":  t["hhid"],
-                "detail":     t["detail"],
-                "changed_on": t["changed_on"],
+                "label":      hh["hh_name"],
+                "transition": hh["transition"],
+                hh["cat"]:    1,
                 "indent":     1,
                 "bold":       0,
             })
             data.append(row)
 
-    # ── Chart ─────────────────────────────────────────────────────────────────
-    chart = _build_chart(chart_buckets) if chart_buckets else None
+    # ── Chart: daily bar chart of forward moves ───────────────────────────────
+    chart = _build_chart(date_order, dates)
     return data, chart
 
 
-def _build_chart(chart_buckets):
-    weeks = sorted(chart_buckets.keys())
-    series_keys = [
-        ("aadhaar_received", "Aadhaar Received",     "#36AE7C"),
-        ("income_received",  "Income Cert Ready",    "#FFA500"),
-        ("cmchis_applied",   "CMCHIS Applied",       "#4169E1"),
-        ("cmchis_active",    "CMCHIS Active",        "#22C55E"),
+def _build_chart(date_order, dates):
+    # Show dates oldest→newest on x-axis
+    labels = list(reversed(date_order))
+
+    series = [
+        ("docs_completed", "→ Docs Ready",         "#22C55E"),
+        ("aadhaar_step",   "Aadhaar Done (partial)","#36AE7C"),
+        ("income_step",    "Income Done (partial)", "#FFA500"),
+        ("cmchis_applied", "→ Applied",             "#4169E1"),
+        ("cmchis_active",  "→ Active",              "#7C3AED"),
+        ("rejected",       "→ Rejected",            "#EF4444"),
     ]
+
     datasets = [
         {
             "name":   label,
-            "values": [chart_buckets[w].get(key, 0) for w in weeks],
-            "chartType": "line",
+            "values": [dates[d]["counts"].get(key, 0) for d in labels],
+            "chartType": "bar",
         }
-        for key, label, _ in series_keys
+        for key, label, _ in series
     ]
+
     return {
-        "data": {
-            "labels":   weeks,
-            "datasets": datasets,
-        },
-        "type":      "line",
-        "fieldtype": "Int",
-        "colors":    [c for _, _, c in series_keys],
-        "title":     "Weekly Status Transitions",
+        "data": {"labels": labels, "datasets": datasets},
+        "type":        "bar",
+        "fieldtype":   "Int",
+        "colors":      [c for _, _, c in series],
+        "title":       "Daily Pipeline Movement",
         "axisOptions": {"xIsSeries": 1},
+        "barOptions":  {"stacked": 0},
     }
