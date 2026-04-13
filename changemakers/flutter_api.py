@@ -590,7 +590,23 @@ def save_cmchis_status(hhid, status):
                 "valid_values": _VALID_CMCHIS,
             }
 
+    old_cmchis = frappe.db.get_value("Household Profile-WRP", hhid, "cmchis_status") or ""
     frappe.db.set_value("Household Profile-WRP", hhid, "cmchis_status", normalised)
+
+    # db.set_value bypasses before_save hooks, so log the bucket transition manually.
+    if old_cmchis != normalised:
+        try:
+            from changemakers.wrp_status_logger import (
+                _compute_hh_bucket, _get_hh_context, _insert_log
+            )
+            old_bucket = _compute_hh_bucket(hhid, hh_cmchis=old_cmchis)
+            new_bucket = _compute_hh_bucket(hhid, hh_cmchis=normalised)
+            ctx = _get_hh_context(hhid)
+            _insert_log(hhid, None, "cmchis_status", old_cmchis, normalised,
+                        old_bucket, new_bucket, ctx)
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "save_cmchis_status logger error")
+
     frappe.db.commit()
     return {"status": "ok", "saved": normalised}
 
