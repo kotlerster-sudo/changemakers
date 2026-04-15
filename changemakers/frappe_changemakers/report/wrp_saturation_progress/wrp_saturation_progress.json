@@ -22,14 +22,6 @@
    "wildcard_filter": 0
   },
   {
-   "fieldname": "pm",
-   "fieldtype": "Link",
-   "label": "Programme Manager",
-   "mandatory": 0,
-   "options": "Staff details - WRP",
-   "wildcard_filter": 0
-  },
-  {
    "fieldname": "street",
    "fieldtype": "Link",
    "label": "Street",

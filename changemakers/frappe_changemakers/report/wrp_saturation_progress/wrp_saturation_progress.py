@@ -76,11 +76,6 @@ def _scope_cond(filters):
     if filters.get("ac"):
         cond += " AND sl.ac_alloted LIKE %(ac)s"
         vals["ac"] = "%" + filters["ac"] + "%"
-    if filters.get("pm"):
-        pm_org = frappe.db.get_value("Staff details - WRP", filters["pm"], "organisation")
-        if pm_org:
-            cond += " AND sl.implementing_org = %(pm_org)s"
-            vals["pm_org"] = pm_org
     if filters.get("street"):
         cond += " AND sl.name = %(street)s"
         vals["street"] = filters["street"]
