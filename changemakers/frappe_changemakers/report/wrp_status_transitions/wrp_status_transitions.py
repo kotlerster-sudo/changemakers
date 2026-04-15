@@ -47,9 +47,9 @@ def _classify(old_b, new_b):
         return "cmchis_active"
     if new_b == "rejected":
         return "rejected"
-    if old_b == "missing_both" and new_b == "missing_income":
+    if new_b == "missing_income" and old_b in ("missing_both", "unvisited"):
         return "aadhaar_step"
-    if old_b == "missing_both" and new_b == "missing_aadhaar":
+    if new_b == "missing_aadhaar" and old_b in ("missing_both", "unvisited"):
         return "income_step"
     if old_b == new_b:
         return "no_change"
@@ -238,7 +238,6 @@ def _build_chart(date_order, dates):
         {
             "name":   label,
             "values": [dates[d]["counts"].get(key, 0) for d in labels],
-            "chartType": "bar",
         }
         for key, label, _ in series
     ]
