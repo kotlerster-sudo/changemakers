@@ -15,6 +15,22 @@
    "wildcard_filter": 0
   },
   {
+   "fieldname": "ac",
+   "fieldtype": "Link",
+   "label": "Area Coordinator",
+   "mandatory": 0,
+   "options": "Staff details - WRP",
+   "wildcard_filter": 0
+  },
+  {
+   "fieldname": "pm",
+   "fieldtype": "Link",
+   "label": "Programme Manager",
+   "mandatory": 0,
+   "options": "Staff details - WRP",
+   "wildcard_filter": 0
+  },
+  {
    "fieldname": "street",
    "fieldtype": "Link",
    "label": "Street",
@@ -38,16 +54,9 @@
    "wildcard_filter": 0
   },
   {
-   "fieldname": "ac",
-   "fieldtype": "Data",
-   "label": "Assembly Constituency (AC)",
-   "mandatory": 0,
-   "wildcard_filter": 0
-  },
-  {
    "fieldname": "from_date",
    "fieldtype": "Date",
-   "label": "Baseline Date Override",
+   "label": "From Date",
    "mandatory": 0,
    "wildcard_filter": 0
   },

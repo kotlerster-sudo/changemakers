@@ -55,10 +55,13 @@ def _ensure_saturation_shortcut():
     report_name = "WRP Saturation Progress"
     if not frappe.db.exists("Workspace", "WRP Performance"):
         return
+    if not frappe.db.exists("Report", report_name):
+        return  # fixtures not yet synced — skip; next migrate will catch it
 
     doc = frappe.get_doc("Workspace", "WRP Performance")
 
     existing_links = {s.link_to for s in doc.shortcuts}
+    shortcuts_changed = False
     if report_name not in existing_links:
         doc.append("shortcuts", {
             "label":   "Saturation Progress",
@@ -66,6 +69,7 @@ def _ensure_saturation_shortcut():
             "type":    "Report",
             "color":   "Purple",
         })
+        shortcuts_changed = True
 
     content = json.loads(doc.content or "[]")
     existing_names = {
@@ -73,6 +77,7 @@ def _ensure_saturation_shortcut():
         for item in content
         if item.get("type") == "shortcut"
     }
+    content_changed = False
     if report_name not in existing_names:
         content += [
             {"id": "wrp_sat_h", "type": "paragraph",
@@ -81,7 +86,14 @@ def _ensure_saturation_shortcut():
              "data": {"shortcut_name": report_name, "col": 4}},
         ]
         doc.content = json.dumps(content)
+        content_changed = True
 
-    doc.flags.ignore_links = True
-    doc.save(ignore_permissions=True)
+    if shortcuts_changed or content_changed:
+        _old = frappe.flags.ignore_links
+        frappe.flags.ignore_links = True
+        try:
+            doc.save(ignore_permissions=True)
+        finally:
+            frappe.flags.ignore_links = _old
+
     frappe.db.commit()

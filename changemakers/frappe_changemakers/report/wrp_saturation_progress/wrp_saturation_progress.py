@@ -58,6 +58,14 @@ def _scope_cond(filters):
     """
     Returns (cond_str, vals_dict) for JOINing through Street List - WRP.
     Returns (None, {}) when the current user has no org access.
+
+    Filters:
+      co               → sl.added_by_co
+      ac               → sl.ac_alloted  (Area Coordinator)
+      pm               → sl.implementing_org via PM's organisation
+      street           → sl.name
+      intervention_unit→ sl.intervention_units
+      implementing_org → sl.implementing_org (partial/case-insensitive match)
     """
     cond = ""
     vals = {}
@@ -65,6 +73,14 @@ def _scope_cond(filters):
     if filters.get("co"):
         cond += " AND sl.added_by_co = %(co)s"
         vals["co"] = filters["co"]
+    if filters.get("ac"):
+        cond += " AND sl.ac_alloted = %(ac)s"
+        vals["ac"] = filters["ac"]
+    if filters.get("pm"):
+        pm_org = frappe.db.get_value("Staff details - WRP", filters["pm"], "organisation")
+        if pm_org:
+            cond += " AND sl.implementing_org = %(pm_org)s"
+            vals["pm_org"] = pm_org
     if filters.get("street"):
         cond += " AND sl.name = %(street)s"
         vals["street"] = filters["street"]
@@ -72,11 +88,8 @@ def _scope_cond(filters):
         cond += " AND sl.intervention_units = %(iu)s"
         vals["iu"] = filters["intervention_unit"]
     if filters.get("implementing_org"):
-        cond += " AND sl.implementing_org = %(org)s"
-        vals["org"] = filters["implementing_org"]
-    if filters.get("ac"):
-        cond += " AND sl.ac_alloted = %(ac)s"
-        vals["ac"] = filters["ac"]
+        cond += " AND sl.implementing_org LIKE %(org)s"
+        vals["org"] = "%" + filters["implementing_org"] + "%"
 
     # Automatic org-level scoping for WRP roles
     wrp_roles = {"WRP-PM", "WRP-AC", "WRP-MIS"}
