@@ -1,4 +1,5 @@
 import frappe
+import json
 
 
 def execute():
@@ -8,6 +9,7 @@ def execute():
         "CO Daily Coverage",
         "CMCHIS Delay Analysis",
         "WRP Status Transitions",
+        "WRP Saturation Progress",
     ]
     roles = [
         "System Manager",
@@ -43,4 +45,42 @@ def execute():
                      %s, 'roles', 'Report', %s)
             """, (frappe.generate_hash(length=10), report_name, role))
 
+    frappe.db.commit()
+
+    # ── Ensure WRP Saturation Progress shortcut is in WRP Performance workspace ──
+    _ensure_saturation_shortcut()
+
+
+def _ensure_saturation_shortcut():
+    report_name = "WRP Saturation Progress"
+    if not frappe.db.exists("Workspace", "WRP Performance"):
+        return
+
+    doc = frappe.get_doc("Workspace", "WRP Performance")
+
+    existing_links = {s.link_to for s in doc.shortcuts}
+    if report_name not in existing_links:
+        doc.append("shortcuts", {
+            "label":   "Saturation Progress",
+            "link_to": report_name,
+            "type":    "Report",
+            "color":   "Purple",
+        })
+
+    content = json.loads(doc.content or "[]")
+    existing_names = {
+        item.get("data", {}).get("shortcut_name")
+        for item in content
+        if item.get("type") == "shortcut"
+    }
+    if report_name not in existing_names:
+        content += [
+            {"id": "wrp_sat_h", "type": "paragraph",
+             "data": {"text": "Baseline & Progress", "col": 12}},
+            {"id": "wrp_sat_s", "type": "shortcut",
+             "data": {"shortcut_name": report_name, "col": 4}},
+        ]
+        doc.content = json.dumps(content)
+
+    doc.save(ignore_permissions=True)
     frappe.db.commit()
