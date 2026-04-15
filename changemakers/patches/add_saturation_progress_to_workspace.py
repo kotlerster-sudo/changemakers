@@ -57,5 +57,6 @@ def execute():
         ]
         doc.content = json.dumps(content)
 
+    doc.flags.ignore_links = True
     doc.save(ignore_permissions=True)
     frappe.db.commit()
