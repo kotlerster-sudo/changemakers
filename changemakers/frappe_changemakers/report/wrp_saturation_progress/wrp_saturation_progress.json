@@ -16,10 +16,9 @@
   },
   {
    "fieldname": "ac",
-   "fieldtype": "Link",
-   "label": "Area Coordinator",
+   "fieldtype": "Data",
+   "label": "Area Coordinator (name)",
    "mandatory": 0,
-   "options": "Staff details - WRP",
    "wildcard_filter": 0
   },
   {
@@ -49,7 +48,7 @@
   {
    "fieldname": "implementing_org",
    "fieldtype": "Data",
-   "label": "Implementing Organisation",
+   "label": "Implementing Organisation (partial name)",
    "mandatory": 0,
    "wildcard_filter": 0
   },
@@ -70,7 +69,7 @@
  ],
  "idx": 0,
  "is_standard": "Yes",
- "modified": "2026-04-15 00:00:00.000000",
+ "modified": "2026-04-15 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Changemakers",
  "name": "WRP Saturation Progress",

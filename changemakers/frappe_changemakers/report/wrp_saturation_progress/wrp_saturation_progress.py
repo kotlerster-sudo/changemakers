@@ -74,8 +74,8 @@ def _scope_cond(filters):
         cond += " AND sl.added_by_co = %(co)s"
         vals["co"] = filters["co"]
     if filters.get("ac"):
-        cond += " AND sl.ac_alloted = %(ac)s"
-        vals["ac"] = filters["ac"]
+        cond += " AND sl.ac_alloted LIKE %(ac)s"
+        vals["ac"] = "%" + filters["ac"] + "%"
     if filters.get("pm"):
         pm_org = frappe.db.get_value("Staff details - WRP", filters["pm"], "organisation")
         if pm_org:
