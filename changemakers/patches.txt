@@ -10,3 +10,4 @@ changemakers.patches.set_wrp_report_roles_v2
 changemakers.patches.add_income_cert_expired_option
 changemakers.patches.add_status_transitions_to_workspace
 changemakers.patches.add_saturation_progress_to_workspace
+changemakers.patches.fix_saturation_report_and_workspace

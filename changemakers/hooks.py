@@ -46,7 +46,6 @@ fixtures = [
                     "CO Daily Coverage",
                     "CMCHIS Delay Analysis",
                     "WRP Status Transitions",
-                    "WRP Saturation Progress",
                 ],
             )
         },
