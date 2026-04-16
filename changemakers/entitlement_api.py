@@ -421,30 +421,155 @@ def save_beneficiary_status(
     return {"status": "ok", "beneficiary": beneficiary_id}
 
 
+def _resolve_label(config, doc_slot, status_value):
+    """Resolve a raw status_value to its human label from config."""
+    if doc_slot == "final_status":
+        for s in config["final_statuses"]:
+            if s["value"] == status_value:
+                return s["label"]
+        return status_value or ""
+    for slot in config["slots"]:
+        if slot["slot_key"] == doc_slot:
+            for s in slot["statuses"]:
+                if s["value"] == status_value:
+                    return s["label"]
+            return status_value or ""
+    return status_value or ""
+
+
+def _resolve_doc_label(config, doc_slot):
+    """Resolve a slot key to its document label, e.g. doc1 → 'Aadhaar Card'."""
+    if doc_slot == "final_status":
+        return config.get("final_status_label", "Final Status")
+    for slot in config["slots"]:
+        if slot["slot_key"] == doc_slot:
+            return slot["label"]
+    return doc_slot
+
+
+def _container_bucket(config, container_id, beneficiary_id=None):
+    """
+    Compute the current pipeline bucket for a container (household-equivalent).
+    Derives from the container's final_status and the worst-case doc slot status
+    across all beneficiaries in that container.
+    """
+    if not container_id:
+        if beneficiary_id:
+            b = frappe.db.get_value(
+                "Generic Beneficiary", beneficiary_id,
+                ["doc1_status", "doc2_status", "doc3_status", "doc4_status",
+                 "final_status", "visit_count"],
+                as_dict=True,
+            ) or {}
+            return _bucket(config, frappe._dict(b), "")
+        return "unvisited"
+
+    container = frappe.db.get_value(
+        "Generic Container", container_id, ["final_status"], as_dict=True
+    ) or {}
+    container_final = container.get("final_status") or ""
+
+    # Get all beneficiaries in this container
+    members = frappe.get_all(
+        "Generic Beneficiary",
+        filters={"container": container_id, "entitlement": config["code"]},
+        fields=["name", "doc1_status", "doc2_status", "doc3_status",
+                "doc4_status", "final_status", "visit_count"],
+    )
+    if not members:
+        return "unvisited"
+
+    # Container bucket = most advanced bucket among members
+    # Priority: goal > applied_pending > docs_ready > docs_in_progress > unvisited
+    PRIORITY = {
+        "goal": 5, "negative": 4, "applied_pending": 3,
+        "docs_ready": 2, "docs_in_progress": 1, "unvisited": 0,
+    }
+    best = "unvisited"
+    for m in members:
+        bkt = _bucket(config, frappe._dict(m), container_final)
+        if PRIORITY.get(bkt, 0) > PRIORITY.get(best, 0):
+            best = bkt
+    return best
+
+
 def _log_status(entitlement_code, beneficiary_id, container_id,
                 doc_slot, old_val, new_val, config):
-    """Write a status change to WRP Status Log (reusing existing log doctype)."""
+    """
+    Write a row to Entitlement Status Log.
+
+    Computes old_bucket from the pre-change state (passed in as old_val),
+    and new_bucket from the container's current state after the change has
+    been saved.
+    """
     try:
-        old_bucket = _classify_bucket_from_values(config, {})
+        # old_bucket: container state before this change
+        # We approximate by temporarily reversing the change to re-classify.
+        # The caller saves the beneficiary AFTER calling _log_status, so the
+        # DB still has the old value at this point — we just read it directly.
+        old_bucket = _container_bucket(config, container_id, beneficiary_id)
+
+        # new_bucket: container state after this change
+        # Since beneficiary.save() hasn't been called yet when we're logging a
+        # doc_slot change, we compute it by patching the in-memory values.
+        if container_id:
+            members = frappe.get_all(
+                "Generic Beneficiary",
+                filters={"container": container_id, "entitlement": entitlement_code},
+                fields=["name", "doc1_status", "doc2_status", "doc3_status",
+                        "doc4_status", "final_status", "visit_count"],
+            )
+            # Apply the change in-memory to the matching beneficiary
+            container_final = frappe.db.get_value(
+                "Generic Container", container_id, "final_status"
+            ) or ""
+            if doc_slot == "final_status":
+                container_final = new_val
+
+            PRIORITY = {
+                "goal": 5, "negative": 4, "applied_pending": 3,
+                "docs_ready": 2, "docs_in_progress": 1, "unvisited": 0,
+            }
+            new_bucket = "unvisited"
+            for m in members:
+                m_dict = dict(m)
+                if m["name"] == beneficiary_id and doc_slot != "final_status":
+                    m_dict[doc_slot] = new_val
+                bkt = _bucket(config, frappe._dict(m_dict), container_final)
+                if PRIORITY.get(bkt, 0) > PRIORITY.get(new_bucket, 0):
+                    new_bucket = bkt
+        else:
+            new_bucket = old_bucket  # single-member, recompute after save
+
+        # Resolve CO from session
+        co = frappe.db.get_value(
+            "Staff details - WRP", {"mail_id": frappe.session.user}, "name"
+        ) or ""
+
+        # Resolve street from beneficiary
+        street = frappe.db.get_value("Generic Beneficiary", beneficiary_id, "street") or ""
+
         frappe.get_doc({
-            "doctype":          "WRP Status Log",
-            "hh_name":          container_id or beneficiary_id,
-            "old_bucket":       old_val,
-            "new_bucket":       new_val,
-            "changed_at":       now_datetime(),
-            "implementing_org": "",
+            "doctype":       "Entitlement Status Log",
+            "naming_series": "ESL-.YYYY.-.#####",
+            "entitlement":   entitlement_code,
+            "beneficiary":   beneficiary_id,
+            "container":     container_id or "",
+            "street":        street,
+            "co":            co,
+            "doc_slot":      doc_slot,
+            "doc_label":     _resolve_doc_label(config, doc_slot),
+            "old_value":     old_val or "",
+            "old_label":     _resolve_label(config, doc_slot, old_val),
+            "old_bucket":    old_bucket,
+            "new_value":     new_val or "",
+            "new_label":     _resolve_label(config, doc_slot, new_val),
+            "new_bucket":    new_bucket,
+            "changed_at":    now_datetime(),
         }).insert(ignore_permissions=True)
+
     except Exception:
         frappe.log_error(frappe.get_traceback(), "entitlement_api._log_status")
-
-
-def _classify_bucket_from_values(config, slot_values):
-    """Classify bucket from a dict of {slot_key: status_value}."""
-    for slot in config["slots"]:
-        val = slot_values.get(slot["slot_key"], "")
-        if val not in slot["terminal_values"]:
-            return "docs_in_progress"
-    return "docs_ready"
 
 
 @frappe.whitelist()
