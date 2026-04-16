@@ -1,0 +1,50 @@
+{
+ "actions": [],
+ "allow_import": 1,
+ "autoname": "naming_series:",
+ "creation": "2026-04-16 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series", "entitlement", "container_id", "column_break_1",
+  "street", "assigned_co",
+  "section_break_survey", "survey_status", "availability", "respondent",
+  "section_break_final", "final_status"
+ ],
+ "fields": [
+  {"fieldname": "naming_series",  "fieldtype": "Series",  "label": "Series", "options": "GC-.YYYY.-.#####"},
+  {"fieldname": "entitlement",    "fieldtype": "Link",    "label": "Entitlement", "options": "Entitlement Config",
+   "reqd": 1, "in_list_view": 1},
+  {"fieldname": "container_id",   "fieldtype": "Data",    "label": "External ID (e.g. HHID)",
+   "description": "ID from legacy system or external source"},
+  {"fieldname": "column_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "street",         "fieldtype": "Link",    "label": "Street",  "options": "Street List  - WRP", "in_list_view": 1},
+  {"fieldname": "assigned_co",    "fieldtype": "Link",    "label": "Assigned CO", "options": "Staff details - WRP"},
+  {"fieldname": "section_break_survey","fieldtype": "Section Break", "label": "Survey"},
+  {"fieldname": "survey_status",  "fieldtype": "Data",    "label": "Survey Status"},
+  {"fieldname": "availability",   "fieldtype": "Data",    "label": "Availability"},
+  {"fieldname": "respondent",     "fieldtype": "Data",    "label": "Respondent Name"},
+  {"fieldname": "section_break_final","fieldtype": "Section Break", "label": "Final Status"},
+  {"fieldname": "final_status",   "fieldtype": "Data",    "label": "Final Status",
+   "description": "Stores the status_value from Entitlement Final Status config", "in_list_view": 1}
+ ],
+ "links": [],
+ "modified": "2026-04-16 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Changemakers",
+ "name": "Generic Container",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1,
+   "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1},
+  {"create": 1, "read": 1, "write": 1, "role": "Program Manager"},
+  {"create": 1, "read": 1, "write": 1, "role": "Partner SMT"},
+  {"create": 1, "read": 1, "write": 1, "role": "WRP-PM"},
+  {"create": 1, "read": 1, "write": 1, "role": "WRP-MIS"}
+ ],
+ "search_fields": "container_id,street,respondent",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "title_field": "container_id",
+ "track_changes": 1
+}
