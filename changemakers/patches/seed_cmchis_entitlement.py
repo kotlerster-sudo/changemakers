@@ -15,6 +15,8 @@ import frappe
 
 
 def execute():
+    if not frappe.db.exists("DocType", "Entitlement Config"):
+        return  # DocType not yet synced — skip gracefully
     if frappe.db.exists("Entitlement Config", "E1"):
         return  # Already seeded
 
