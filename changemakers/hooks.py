@@ -8,7 +8,10 @@ app_version = "0.0.1"  # Hardcoded for Frappe Cloud compatibility
 required_frappe_version = ">=15.0.0 <16.0.0"
 
 # Runs after every bench migrate — ensures WRP report roles survive module sync resets
-after_migrate = ["changemakers.patches.set_wrp_report_roles_v2.execute"]
+after_migrate = [
+    "changemakers.patches.set_wrp_report_roles_v2.execute",
+    "changemakers.patches.seed_cmchis_entitlement.execute",
+]
 
 fixtures = [
     "Custom HTML Block",
