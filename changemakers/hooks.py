@@ -62,6 +62,8 @@ override_whitelisted_methods = {
     "changemakers.entitlement_api.get_daily_workplan_v2":    "changemakers.entitlement_api.get_daily_workplan_v2",
     "changemakers.entitlement_api.save_beneficiary_status":  "changemakers.entitlement_api.save_beneficiary_status",
     "changemakers.entitlement_api.get_co_performance_v2":    "changemakers.entitlement_api.get_co_performance_v2",
+    "changemakers.dashboard_api.get_dashboard_overview":     "changemakers.dashboard_api.get_dashboard_overview",
+    "changemakers.dashboard_api.get_drilldown":              "changemakers.dashboard_api.get_drilldown",
 }
 
 website_route_rules = [
