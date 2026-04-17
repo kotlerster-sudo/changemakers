@@ -123,6 +123,35 @@ def _get_hh_context(hh_name):
     return rows[0] if rows else {}
 
 
+def _insert_visit_log(individual, hh_name, ctx):
+    """Write one row to WRP Visit Log for a raw visit (visit_count increment)."""
+    frappe.db.sql(
+        """
+        INSERT INTO `tabWRP Visit Log`
+            (name, individual, hh_name, co_id,
+             street_name, intervention_unit, implementing_org,
+             visited_at,
+             creation, modified, owner, modified_by, docstatus)
+        VALUES
+            (%(name)s, %(individual)s, %(hh_name)s, %(co_id)s,
+             %(street_name)s, %(intervention_unit)s, %(implementing_org)s,
+             %(now)s,
+             %(now)s, %(now)s, %(user)s, %(user)s, 0)
+        """,
+        {
+            "name":              frappe.generate_hash(length=10),
+            "individual":        individual or "",
+            "hh_name":           hh_name or "",
+            "co_id":             ctx.get("co_id") or "",
+            "street_name":       ctx.get("street_name") or "",
+            "intervention_unit": ctx.get("intervention_unit") or "",
+            "implementing_org":  ctx.get("implementing_org") or "",
+            "now":               str(now_datetime()),
+            "user":              frappe.session.user,
+        },
+    )
+
+
 def _insert_log(hh_name, individual, field, old_val, new_val,
                 old_bucket, new_bucket, ctx):
     now  = str(now_datetime())
@@ -181,11 +210,19 @@ def log_individual_status_change(doc, method):
         return
 
     changed_fields = [f for f in IND_TRACKED if old_doc.get(f) != doc.get(f)]
-    if not changed_fields:
+    visit_incremented = int(doc.get("visit_count") or 0) > int(old_doc.get("visit_count") or 0)
+
+    if not changed_fields and not visit_incremented:
         return
 
     hh_cmchis = frappe.db.get_value("Household Profile-WRP", hh_name, "cmchis_status") or ""
     ctx = _get_hh_context(hh_name)
+
+    if visit_incremented:
+        _insert_visit_log(doc.name, hh_name, ctx)
+
+    if not changed_fields:
+        return
 
     # Before: DB still has old values for this individual (we're in before_save)
     old_bucket = _compute_hh_bucket(hh_name, hh_cmchis=hh_cmchis)

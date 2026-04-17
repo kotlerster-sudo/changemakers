@@ -337,10 +337,11 @@ def _co_performance(sc, sv):
         log_sc += " AND co_id = %(co)s"
         log_sv["co"] = sv["co"]
 
+    # Update rate: distinct (date × hh) from Status Log — visits that changed something
     log_rows = frappe.db.sql(f"""
         SELECT
             co_id AS co,
-            COUNT(DISTINCT CONCAT(DATE(changed_at), '|', hh_name)) AS hh_day_visits,
+            COUNT(DISTINCT CONCAT(DATE(changed_at), '|', hh_name)) AS update_hh_days,
             COUNT(DISTINCT DATE(changed_at))                         AS active_days,
             SUM(CASE WHEN old_bucket IS NOT NULL AND old_bucket != new_bucket
                      THEN 1 ELSE 0 END)                              AS bucket_changes
@@ -349,6 +350,19 @@ def _co_performance(sc, sv):
           AND co_id IS NOT NULL AND co_id != '' {log_sc}
         GROUP BY co_id
     """, log_sv, as_dict=True)
+
+    # Raw visit rate: distinct (date × hh) from WRP Visit Log — every visit recorded
+    visit_sc = log_sc.replace("implementing_org", "implementing_org").replace("co_id", "co_id")
+    visit_rows = frappe.db.sql(f"""
+        SELECT
+            co_id AS co,
+            COUNT(DISTINCT CONCAT(DATE(visited_at), '|', hh_name)) AS raw_hh_days
+        FROM `tabWRP Visit Log`
+        WHERE visited_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+          AND co_id IS NOT NULL AND co_id != '' {log_sc}
+        GROUP BY co_id
+    """, log_sv, as_dict=True)
+    raw_visit_map = {r.co: int(r.raw_hh_days or 0) for r in visit_rows}
 
     # Resolve CO names
     co_names = {
@@ -362,35 +376,38 @@ def _co_performance(sc, sv):
     for r in log_rows:
         co = r.co
         active_days = int(r.active_days or 1)
-        hh_day = int(r.hh_day_visits or 0)
-        changes = int(r.bucket_changes or 0)
-        total_hh = hh_map.get(co, 0)
+        update_days = int(r.update_hh_days or 0)
+        raw_days    = raw_visit_map.get(co, 0)
+        changes     = int(r.bucket_changes or 0)
+        total_hh    = hh_map.get(co, 0)
 
-        avg_per_day = hh_day / active_days if active_days else 0
-        target_total = TARGET_PER_DAY * active_days
-        rate_pct = round(hh_day / target_total * 100) if target_total else 0
+        target_total  = TARGET_PER_DAY * active_days
+        update_pct    = round(update_days / target_total * 100) if target_total else 0
+        raw_visit_pct = round(raw_days    / target_total * 100) if target_total else 0
 
         entry = {
-            "co":           co,
-            "co_name":      co_names.get(co, co),
-            "total_hh":     total_hh,
-            "hh_day_visits":hh_day,
-            "active_days":  active_days,
-            "avg_per_day":  round(avg_per_day, 1),
-            "rate_pct":     rate_pct,
-            "bucket_changes": changes,
+            "co":              co,
+            "co_name":         co_names.get(co, co),
+            "total_hh":        total_hh,
+            "update_hh_days":  update_days,
+            "raw_hh_days":     raw_days,
+            "active_days":     active_days,
+            "update_pct":      update_pct,
+            "raw_visit_pct":   raw_visit_pct,
+            "rate_pct":        update_pct,   # buckets still use update rate
+            "bucket_changes":  changes,
         }
 
-        if rate_pct < 25:
+        if update_pct < 25:
             below_25.append(entry)
-        elif rate_pct < 50:
+        elif update_pct < 50:
             below_50.append(entry)
-        elif rate_pct < 75:
+        elif update_pct < 75:
             below_75.append(entry)
 
-        # Low impact: visited 10+ HH-days but <20% resulted in bucket change
-        if hh_day >= 10 and (changes / hh_day) < 0.20:
-            entry["impact_ratio"] = round(changes / hh_day * 100, 1)
+        # Low impact: 10+ update-days but <20% resulted in a bucket change
+        if update_days >= 10 and (changes / update_days) < 0.20:
+            entry["impact_ratio"] = round(changes / update_days * 100, 1)
             low_impact.append(entry)
 
     for lst in [below_25, below_50, below_75, low_impact]:
@@ -683,12 +700,13 @@ def _dd_co_perf(sc, sv, min_rate=0, max_rate=100):
     ]
     rows.sort(key=lambda x: x["rate_pct"])
     cols = [
-        {"label": "CO",             "fieldname": "co_name"},
-        {"label": "Visit Rate %",   "fieldname": "rate_pct"},
-        {"label": "HH-Day Visits",  "fieldname": "hh_day_visits"},
-        {"label": "Active Days",    "fieldname": "active_days"},
-        {"label": "Avg/Day",        "fieldname": "avg_per_day"},
-        {"label": "Total HH",       "fieldname": "total_hh"},
+        {"label": "CO",              "fieldname": "co_name"},
+        {"label": "Update Rate %",   "fieldname": "update_pct"},
+        {"label": "Visit Rate %",    "fieldname": "raw_visit_pct"},
+        {"label": "Update Days",     "fieldname": "update_hh_days"},
+        {"label": "Raw Visit Days",  "fieldname": "raw_hh_days"},
+        {"label": "Active Days",     "fieldname": "active_days"},
+        {"label": "Total HH",        "fieldname": "total_hh"},
     ]
     return rows, cols
 
@@ -698,7 +716,8 @@ def _dd_co_low_impact(sc, sv):
     rows = perf["low_impact"]
     cols = [
         {"label": "CO",              "fieldname": "co_name"},
-        {"label": "HH-Day Visits",   "fieldname": "hh_day_visits"},
+        {"label": "Update Days",     "fieldname": "update_hh_days"},
+        {"label": "Raw Visit Days",  "fieldname": "raw_hh_days"},
         {"label": "Bucket Changes",  "fieldname": "bucket_changes"},
         {"label": "Impact %",        "fieldname": "impact_ratio"},
         {"label": "Active Days",     "fieldname": "active_days"},
