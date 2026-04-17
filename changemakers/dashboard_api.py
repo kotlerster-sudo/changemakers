@@ -482,6 +482,13 @@ def get_drilldown(metric, level="org", parent=None, filters=None):
     # Dispatch
     dispatch = {
         "unvisited":             _dd_unvisited,
+        "missing_both":          lambda sc, v: _dd_pipeline_bucket(sc, v, "missing_both"),
+        "missing_aadhaar":       lambda sc, v: _dd_pipeline_bucket(sc, v, "missing_aadhaar"),
+        "missing_income":        lambda sc, v: _dd_pipeline_bucket(sc, v, "missing_income"),
+        "docs_ready":            lambda sc, v: _dd_pipeline_bucket(sc, v, "docs_ready"),
+        "applied":               lambda sc, v: _dd_pipeline_bucket(sc, v, "applied"),
+        "active":                lambda sc, v: _dd_pipeline_bucket(sc, v, "active"),
+        "rejected":              lambda sc, v: _dd_pipeline_bucket(sc, v, "rejected"),
         "visited_no_change_7d":  _dd_visited_no_change,
         "stagnant_14d":          _dd_stagnant,
         "aadhaar_internal_sla":  lambda sc, v: _dd_sla_individuals(sc, v, "aadhaar_status", "%Internal Applied%", 15, "Aadhaar"),
@@ -542,6 +549,73 @@ def _hh_select(extra_fields=""):
             {extra_fields}
         {HH_BASE}
     """
+
+def _dd_pipeline_bucket(sc, v, bucket):
+    """Drilldown for any pipeline bucket except unvisited (which has its own fn)."""
+    # CMCHIS-status based buckets — simple HH-level filter
+    if bucket == "active":
+        extra = "AND hh.cmchis_status LIKE '%%Active%%'"
+    elif bucket == "rejected":
+        extra = "AND hh.cmchis_status LIKE '%%Rejected%%'"
+    elif bucket == "applied":
+        # "applied" in status AND "not" not in status (mirrors Python bucket logic)
+        extra = ("AND LOWER(hh.cmchis_status) LIKE '%%applied%%' "
+                 "AND LOWER(hh.cmchis_status) NOT LIKE '%%not%%' "
+                 "AND hh.cmchis_status NOT LIKE '%%Active%%' "
+                 "AND hh.cmchis_status NOT LIKE '%%Rejected%%'")
+    else:
+        # Visited, not terminal, not applied — differentiated by doc status
+        not_terminal = ("AND hh.cmchis_status NOT LIKE '%%Active%%' "
+                        "AND hh.cmchis_status NOT LIKE '%%Rejected%%' "
+                        "AND NOT (LOWER(hh.cmchis_status) LIKE '%%applied%%' "
+                        "         AND LOWER(hh.cmchis_status) NOT LIKE '%%not%%') ")
+        visited      = ("AND EXISTS (SELECT 1 FROM `tabIndividual Profile-WRP` iv "
+                        "  WHERE iv.hhid = hh.name AND iv.status = %(ind_active)s "
+                        "  AND iv.visit_count > 0) ")
+        no_both      = ("AND NOT EXISTS (SELECT 1 FROM `tabIndividual Profile-WRP` im "
+                        "  WHERE im.hhid = hh.name AND im.status = %(ind_active)s "
+                        "  AND im.aadhaar_status = 'Aadhaar Received' "
+                        "  AND im.income_status IN ('Income Cert Received','Income Cert Expired')) ")
+        has_aadhaar  = ("AND EXISTS (SELECT 1 FROM `tabIndividual Profile-WRP` im "
+                        "  WHERE im.hhid = hh.name AND im.status = %(ind_active)s "
+                        "  AND im.aadhaar_status = 'Aadhaar Received') ")
+        no_aadhaar   = ("AND NOT EXISTS (SELECT 1 FROM `tabIndividual Profile-WRP` im "
+                        "  WHERE im.hhid = hh.name AND im.status = %(ind_active)s "
+                        "  AND im.aadhaar_status = 'Aadhaar Received') ")
+        has_income   = ("AND EXISTS (SELECT 1 FROM `tabIndividual Profile-WRP` im "
+                        "  WHERE im.hhid = hh.name AND im.status = %(ind_active)s "
+                        "  AND im.income_status IN ('Income Cert Received','Income Cert Expired')) ")
+        no_income    = ("AND NOT EXISTS (SELECT 1 FROM `tabIndividual Profile-WRP` im "
+                        "  WHERE im.hhid = hh.name AND im.status = %(ind_active)s "
+                        "  AND im.income_status IN ('Income Cert Received','Income Cert Expired')) ")
+
+        if bucket == "docs_ready":
+            extra = not_terminal + visited + has_aadhaar + has_income
+        elif bucket == "missing_both":
+            extra = not_terminal + visited + no_both + no_aadhaar + no_income
+        elif bucket == "missing_aadhaar":
+            extra = not_terminal + visited + no_both + no_aadhaar + has_income
+        elif bucket == "missing_income":
+            extra = not_terminal + visited + no_both + has_aadhaar + no_income
+        else:
+            extra = not_terminal + visited
+
+    rows = frappe.db.sql(f"""
+        {_hh_select()}
+          {extra} {sc}
+        ORDER BY sl.implementing_org, sl.name
+    """, v, as_dict=True)
+
+    cols = [
+        {"label": "Household",    "fieldname": "hh_id"},
+        {"label": "Respondent",   "fieldname": "respondent"},
+        {"label": "CMCHIS Status","fieldname": "cmchis_status"},
+        {"label": "Street",       "fieldname": "street"},
+        {"label": "Org",          "fieldname": "implementing_org"},
+        {"label": "CO",           "fieldname": "co"},
+    ]
+    return rows, cols
+
 
 def _dd_unvisited(sc, v):
     rows = frappe.db.sql(f"""
