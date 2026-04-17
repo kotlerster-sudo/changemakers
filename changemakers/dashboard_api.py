@@ -84,9 +84,23 @@ def get_dashboard_overview(filters=None):
         WHERE 1=1 {sc}
     """, sv, as_dict=True)[0]
 
-    # Staff role counts — use Frappe role assignments (avoids schema dependency)
-    pms = frappe.db.count("Has Role", {"role": "WRP-PM", "parenttype": "User"})
-    acs = frappe.db.count("Has Role", {"role": "WRP-AC", "parenttype": "User"})
+    # Staff role counts — scope-aware: join Has Role to Staff details via mail_id
+    org_filter = sv.get("implementing_org") or sv.get("user_org")
+    if org_filter:
+        def _role_count_for_org(role, org):
+            r = frappe.db.sql("""
+                SELECT COUNT(DISTINCT hr.parent) AS cnt
+                FROM `tabHas Role` hr
+                JOIN `tabStaff details - WRP` sd ON sd.mail_id = hr.parent
+                WHERE hr.role = %s AND hr.parenttype = 'User'
+                  AND sd.organisation = %s
+            """, (role, org), as_dict=True)
+            return int(r[0].cnt if r else 0)
+        pms = _role_count_for_org("WRP-PM", org_filter)
+        acs = _role_count_for_org("WRP-AC", org_filter)
+    else:
+        pms = frappe.db.count("Has Role", {"role": "WRP-PM", "parenttype": "User"})
+        acs = frappe.db.count("Has Role", {"role": "WRP-AC", "parenttype": "User"})
 
     # 2. Pipeline (using same bucket logic as saturation report)
     pipeline = _pipeline_counts(sc, v)
@@ -193,48 +207,63 @@ def _pipeline_counts(sc, v):
 # ── SLA violation counts ──────────────────────────────────────────────────────
 
 def _sla_counts(sc, v):
-    def _cnt(extra_cond, extra_vals=None):
-        qv = {**v, **(extra_vals or {})}
+    """
+    Use tabWRP Status Log to find when the status was last set to the 'applied'
+    value — that is the real SLA clock start, not last_visited_at or hh.modified.
+    """
+    def _cnt_ind(field, pat, sla_days, extra_cond=""):
+        # field is a safe internal constant (aadhaar_status / income_status)
         row = frappe.db.sql(f"""
-            SELECT COUNT(DISTINCT ip.hhid) AS cnt
+            SELECT COUNT(DISTINCT ip.name) AS cnt
             FROM `tabIndividual Profile-WRP` ip
             JOIN `tabHousehold Profile-WRP` hh ON hh.name = ip.hhid
             JOIN `tabStreet List  - WRP` sl ON sl.name = hh.street_name
+            JOIN (
+                SELECT individual, MAX(changed_at) AS applied_at
+                FROM `tabWRP Status Log`
+                WHERE field_changed = %(field_name)s
+                  AND new_value LIKE %(pat)s
+                GROUP BY individual
+            ) la ON la.individual = ip.name
             WHERE ip.status = %(ind_active)s
               AND hh.survay_status = %(occupied)s
               AND hh.availability_for = %(going_ahead)s
               AND hh.cmchis_status NOT LIKE '%%Active%%'
               AND hh.cmchis_status NOT LIKE '%%Rejected%%'
-              {extra_cond} {sc}
-        """, qv, as_dict=True)
+              AND ip.{field} LIKE %(pat)s
+              {extra_cond}
+              AND DATEDIFF(NOW(), la.applied_at) > %(sla)s {sc}
+        """, {**v, "pat": pat, "sla": sla_days, "field_name": field}, as_dict=True)
         return int(row[0].cnt if row else 0)
 
+    cmchis_row = frappe.db.sql(f"""
+        SELECT COUNT(DISTINCT hh.name) AS cnt
+        FROM `tabHousehold Profile-WRP` hh
+        JOIN `tabStreet List  - WRP` sl ON sl.name = hh.street_name
+        JOIN (
+            SELECT hh_name, MAX(changed_at) AS applied_at
+            FROM `tabWRP Status Log`
+            WHERE field_changed = 'cmchis_status'
+              AND new_value LIKE '%%Applied%%'
+              AND new_value NOT LIKE '%%Not Applied%%'
+            GROUP BY hh_name
+        ) la ON la.hh_name = hh.name
+        WHERE hh.survay_status = %(occupied)s
+          AND hh.availability_for = %(going_ahead)s
+          AND hh.cmchis_status LIKE '%%Applied%%'
+          AND hh.cmchis_status NOT LIKE '%%Active%%'
+          AND hh.cmchis_status NOT LIKE '%%Rejected%%'
+          AND DATEDIFF(NOW(), la.applied_at) > 5 {sc}
+    """, v, as_dict=True)
+
     return {
-        "aadhaar_internal": _cnt(
-            "AND ip.aadhaar_status LIKE %(pat)s "
-            "AND (ip.last_visited_at IS NULL OR DATEDIFF(NOW(), ip.last_visited_at) > 15)",
-            {"pat": "%Internal Applied%"},
+        "aadhaar_internal": _cnt_ind("aadhaar_status", "%Internal Applied%", 15),
+        "aadhaar_external": _cnt_ind("aadhaar_status", "%External Applied%", 15),
+        "income": _cnt_ind(
+            "income_status", "%Applied%", 4,
+            "AND ip.income_status NOT LIKE '%%Received%%' AND ip.income_status NOT LIKE '%%Expired%%'",
         ),
-        "aadhaar_external": _cnt(
-            "AND ip.aadhaar_status LIKE %(pat)s "
-            "AND (ip.last_visited_at IS NULL OR DATEDIFF(NOW(), ip.last_visited_at) > 15)",
-            {"pat": "%External Applied%"},
-        ),
-        "income": _cnt(
-            "AND ip.income_status LIKE %(pat)s "
-            "AND ip.income_status NOT LIKE '%%Received%%' "
-            "AND ip.income_status NOT LIKE '%%Expired%%' "
-            "AND (ip.last_visited_at IS NULL OR DATEDIFF(NOW(), ip.last_visited_at) > 4)",
-            {"pat": "%Applied%"},
-        ),
-        "cmchis": frappe.db.sql(f"""
-            SELECT COUNT(DISTINCT hh.name) AS cnt
-            {HH_BASE}
-              AND hh.cmchis_status LIKE '%%Applied%%'
-              AND hh.cmchis_status NOT LIKE '%%Active%%'
-              AND hh.cmchis_status NOT LIKE '%%Rejected%%'
-              AND DATEDIFF(NOW(), hh.modified) > 5 {sc}
-        """, v, as_dict=True)[0].cnt or 0,
+        "cmchis": int(cmchis_row[0].cnt if cmchis_row else 0),
     }
 
 
@@ -422,9 +451,9 @@ def get_drilldown(metric, level="org", parent=None, filters=None):
         "unvisited":             _dd_unvisited,
         "visited_no_change_7d":  _dd_visited_no_change,
         "stagnant_14d":          _dd_stagnant,
-        "aadhaar_internal_sla":  lambda sc, v: _dd_sla_individuals(sc, v, "%Internal Applied%", 15, "Aadhaar"),
-        "aadhaar_external_sla":  lambda sc, v: _dd_sla_individuals(sc, v, "%External Applied%", 15, "Aadhaar"),
-        "income_sla":            lambda sc, v: _dd_sla_individuals(sc, v, "%Applied%",           4,  "Income"),
+        "aadhaar_internal_sla":  lambda sc, v: _dd_sla_individuals(sc, v, "aadhaar_status", "%Internal Applied%", 15, "Aadhaar"),
+        "aadhaar_external_sla":  lambda sc, v: _dd_sla_individuals(sc, v, "aadhaar_status", "%External Applied%", 15, "Aadhaar"),
+        "income_sla":            lambda sc, v: _dd_sla_individuals(sc, v, "income_status",  "%Applied%",           4, "Income"),
         "cmchis_sla":            _dd_cmchis_sla,
         "co_below_25":           lambda sc, sv: _dd_co_perf(sc, sv, max_rate=25),
         "co_below_50":           lambda sc, sv: _dd_co_perf(sc, sv, min_rate=25, max_rate=50),
@@ -555,19 +584,18 @@ def _dd_stagnant(sc, v):
     return rows, cols
 
 
-def _dd_sla_individuals(sc, v, status_pat, sla_days, doc_field):
-    col = "aadhaar_status" if doc_field == "Aadhaar" else "income_status"
+def _dd_sla_individuals(sc, v, field, status_pat, sla_days, doc_label):
     extra_cond = ""
-    if doc_field == "Income":
+    if field == "income_status":
         extra_cond = " AND ip.income_status NOT LIKE '%%Received%%' AND ip.income_status NOT LIKE '%%Expired%%'"
     rows = frappe.db.sql(f"""
         SELECT
             ip.name AS individual_id,
             ip.hhid,
-            ip.{col} AS doc_status,
-            DATEDIFF(NOW(), ip.last_visited_at) AS days_since_visit,
-            DATEDIFF(NOW(), ip.last_visited_at) - %(sla)s AS days_overdue,
-            ip.last_visited_at,
+            ip.{field} AS doc_status,
+            la.applied_at,
+            DATEDIFF(NOW(), la.applied_at)           AS days_in_status,
+            DATEDIFF(NOW(), la.applied_at) - %(sla)s AS days_overdue,
             sl.name AS street,
             sl.intervention_units AS iu,
             sl.implementing_org,
@@ -575,23 +603,30 @@ def _dd_sla_individuals(sc, v, status_pat, sla_days, doc_field):
         FROM `tabIndividual Profile-WRP` ip
         JOIN `tabHousehold Profile-WRP` hh ON hh.name = ip.hhid
         JOIN `tabStreet List  - WRP` sl ON sl.name = hh.street_name
+        JOIN (
+            SELECT individual, MAX(changed_at) AS applied_at
+            FROM `tabWRP Status Log`
+            WHERE field_changed = %(field_name)s
+              AND new_value LIKE %(pat)s
+            GROUP BY individual
+        ) la ON la.individual = ip.name
         WHERE ip.status = %(ind_active)s
           AND hh.survay_status = %(occupied)s
           AND hh.availability_for = %(going_ahead)s
           AND hh.cmchis_status NOT LIKE '%%Active%%'
           AND hh.cmchis_status NOT LIKE '%%Rejected%%'
-          AND ip.{col} LIKE %(pat)s
+          AND ip.{field} LIKE %(pat)s
           {extra_cond}
-          AND (ip.last_visited_at IS NULL OR DATEDIFF(NOW(), ip.last_visited_at) > %(sla)s) {sc}
+          AND DATEDIFF(NOW(), la.applied_at) > %(sla)s {sc}
         ORDER BY days_overdue DESC
-    """, {**v, "pat": status_pat, "sla": sla_days}, as_dict=True)
+    """, {**v, "pat": status_pat, "sla": sla_days, "field_name": field}, as_dict=True)
     cols = [
-        {"label": "Household",    "fieldname": "hhid"},
-        {"label": f"{doc_field} Status", "fieldname": "doc_status"},
-        {"label": "Days Overdue", "fieldname": "days_overdue"},
-        {"label": "Last Visit",   "fieldname": "last_visited_at"},
-        {"label": "Street",       "fieldname": "street"},
-        {"label": "CO",           "fieldname": "co"},
+        {"label": "Household",           "fieldname": "hhid"},
+        {"label": f"{doc_label} Status", "fieldname": "doc_status"},
+        {"label": "Applied At",          "fieldname": "applied_at"},
+        {"label": "Days Overdue",        "fieldname": "days_overdue"},
+        {"label": "Street",              "fieldname": "street"},
+        {"label": "CO",                  "fieldname": "co"},
     ]
     return rows, cols
 
@@ -602,24 +637,36 @@ def _dd_cmchis_sla(sc, v):
             hh.name AS hh_id,
             hh.respondent,
             hh.cmchis_status,
-            DATEDIFF(NOW(), hh.modified) AS days_since_change,
-            DATEDIFF(NOW(), hh.modified) - 5 AS days_overdue,
-            hh.modified AS last_modified,
+            la.applied_at,
+            DATEDIFF(NOW(), la.applied_at)      AS days_in_status,
+            DATEDIFF(NOW(), la.applied_at) - 5  AS days_overdue,
             sl.name AS street,
             sl.intervention_units AS iu,
             sl.implementing_org,
             sl.added_by_co AS co
-        {HH_BASE}
+        FROM `tabHousehold Profile-WRP` hh
+        JOIN `tabStreet List  - WRP` sl ON sl.name = hh.street_name
+        JOIN (
+            SELECT hh_name, MAX(changed_at) AS applied_at
+            FROM `tabWRP Status Log`
+            WHERE field_changed = 'cmchis_status'
+              AND new_value LIKE '%%Applied%%'
+              AND new_value NOT LIKE '%%Not Applied%%'
+            GROUP BY hh_name
+        ) la ON la.hh_name = hh.name
+        WHERE hh.survay_status = %(occupied)s
+          AND hh.availability_for = %(going_ahead)s
           AND hh.cmchis_status LIKE '%%Applied%%'
           AND hh.cmchis_status NOT LIKE '%%Active%%'
           AND hh.cmchis_status NOT LIKE '%%Rejected%%'
-          AND DATEDIFF(NOW(), hh.modified) > 5 {sc}
+          AND DATEDIFF(NOW(), la.applied_at) > 5 {sc}
         ORDER BY days_overdue DESC
     """, v, as_dict=True)
     cols = [
         {"label": "Household",    "fieldname": "hh_id"},
         {"label": "Respondent",   "fieldname": "respondent"},
         {"label": "CMCHIS Status","fieldname": "cmchis_status"},
+        {"label": "Applied At",   "fieldname": "applied_at"},
         {"label": "Days Overdue", "fieldname": "days_overdue"},
         {"label": "Street",       "fieldname": "street"},
         {"label": "CO",           "fieldname": "co"},
