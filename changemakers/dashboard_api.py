@@ -351,18 +351,18 @@ def _co_performance(sc, sv):
         GROUP BY co_id
     """, log_sv, as_dict=True)
 
-    # Raw visit rate: distinct (date × hh) from WRP Visit Log — every visit recorded
-    visit_sc = log_sc.replace("implementing_org", "implementing_org").replace("co_id", "co_id")
+    # Raw visit rate: distinct (date × hh) and distinct active days from WRP Visit Log
     visit_rows = frappe.db.sql(f"""
         SELECT
             co_id AS co,
-            COUNT(DISTINCT CONCAT(DATE(visited_at), '|', hh_name)) AS raw_hh_days
+            COUNT(DISTINCT CONCAT(DATE(visited_at), '|', hh_name)) AS raw_hh_days,
+            COUNT(DISTINCT DATE(visited_at))                         AS visit_active_days
         FROM `tabWRP Visit Log`
         WHERE visited_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
           AND co_id IS NOT NULL AND co_id != '' {log_sc}
         GROUP BY co_id
     """, log_sv, as_dict=True)
-    raw_visit_map = {r.co: int(r.raw_hh_days or 0) for r in visit_rows}
+    raw_visit_map = {r.co: (int(r.raw_hh_days or 0), int(r.visit_active_days or 0)) for r in visit_rows}
 
     # Resolve CO names
     co_names = {
@@ -373,13 +373,21 @@ def _co_performance(sc, sv):
     TARGET_PER_DAY = 30
     below_25, below_50, below_75, low_impact = [], [], [], []
 
-    for r in log_rows:
-        co = r.co
-        active_days = int(r.active_days or 1)
-        update_days = int(r.update_hh_days or 0)
-        raw_days    = raw_visit_map.get(co, 0)
-        changes     = int(r.bucket_changes or 0)
+    # Also include COs that appear in visit log but not in status log
+    all_co_ids = set(r.co for r in log_rows) | set(raw_visit_map.keys())
+    log_map = {r.co: r for r in log_rows}
+
+    for co in all_co_ids:
+        r           = log_map.get(co)
+        update_days = int(r.update_hh_days or 0) if r else 0
+        status_active_days = int(r.active_days or 0) if r else 0
+        raw_days, visit_active_days = raw_visit_map.get(co, (0, 0))
+        changes     = int(r.bucket_changes or 0) if r else 0
         total_hh    = hh_map.get(co, 0)
+
+        # Active days = max of status-log days and visit-log days
+        # Ensures COs who visited without updating aren't penalised
+        active_days  = max(status_active_days, visit_active_days) or 1
 
         target_total  = TARGET_PER_DAY * active_days
         update_pct    = round(update_days / target_total * 100) if target_total else 0
