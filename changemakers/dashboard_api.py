@@ -8,7 +8,7 @@ Hierarchy levels: org → iu → street → co → hh → individual
 """
 
 import frappe
-from frappe.utils import nowdate, now_datetime
+from frappe.utils import nowdate, now_datetime, get_first_day, getdate
 import json
 
 # ── Tamil literals used in status fields ────────────────────────────────────
@@ -112,8 +112,11 @@ def get_dashboard_overview(filters=None):
     stagnant = _stagnant_count(sc, v)
     visited_no_change_7d = _visited_no_change(sc, v, days=7)
 
-    # 5. CO performance
-    co_perf = _co_performance(sc, sv)
+    # 5. CO performance — date range defaults to current calendar month
+    today      = nowdate()
+    date_from  = filters.get("date_from") or str(get_first_day(today))
+    date_to    = filters.get("date_to")   or today
+    co_perf = _co_performance(sc, sv, date_from, date_to)
 
     return {
         "structure": {
@@ -310,12 +313,15 @@ def _stagnant_count(sc, v):
 
 # ── CO performance ────────────────────────────────────────────────────────────
 
-def _co_performance(sc, sv):
+def _co_performance(sc, sv, date_from=None, date_to=None):
     """
-    Returns COs grouped by visit-rate bucket (<25, 25-50, 50-75, >75 of target)
+    Returns COs grouped by update-rate bucket (<25, 25-50, 50-75, >75 of target)
     and low-impact COs (many visits, few transitions).
-    Target = 30 HH/day.
+    Target = 30 HH/day. Window defaults to current calendar month.
     """
+    today     = nowdate()
+    date_from = date_from or str(get_first_day(today))
+    date_to   = date_to   or today
     # HH assignment counts per CO
     hh_counts = frappe.db.sql(f"""
         SELECT sl.added_by_co AS co, COUNT(DISTINCT hh.name) AS total_hh
@@ -337,6 +343,8 @@ def _co_performance(sc, sv):
         log_sc += " AND co_id = %(co)s"
         log_sv["co"] = sv["co"]
 
+    date_vals = {**log_sv, "date_from": date_from, "date_to": date_to}
+
     # Update rate: distinct (date × hh) from Status Log — visits that changed something
     log_rows = frappe.db.sql(f"""
         SELECT
@@ -346,10 +354,10 @@ def _co_performance(sc, sv):
             SUM(CASE WHEN old_bucket IS NOT NULL AND old_bucket != new_bucket
                      THEN 1 ELSE 0 END)                              AS bucket_changes
         FROM `tabWRP Status Log`
-        WHERE changed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        WHERE DATE(changed_at) BETWEEN %(date_from)s AND %(date_to)s
           AND co_id IS NOT NULL AND co_id != '' {log_sc}
         GROUP BY co_id
-    """, log_sv, as_dict=True)
+    """, date_vals, as_dict=True)
 
     # Raw visit rate: distinct (date × hh) and distinct active days from WRP Visit Log
     visit_rows = frappe.db.sql(f"""
@@ -358,10 +366,10 @@ def _co_performance(sc, sv):
             COUNT(DISTINCT CONCAT(DATE(visited_at), '|', hh_name)) AS raw_hh_days,
             COUNT(DISTINCT DATE(visited_at))                         AS visit_active_days
         FROM `tabWRP Visit Log`
-        WHERE visited_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        WHERE DATE(visited_at) BETWEEN %(date_from)s AND %(date_to)s
           AND co_id IS NOT NULL AND co_id != '' {log_sc}
         GROUP BY co_id
-    """, log_sv, as_dict=True)
+    """, date_vals, as_dict=True)
     raw_visit_map = {r.co: (int(r.raw_hh_days or 0), int(r.visit_active_days or 0)) for r in visit_rows}
 
     # Resolve CO names
