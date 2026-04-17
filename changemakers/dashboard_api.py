@@ -84,14 +84,9 @@ def get_dashboard_overview(filters=None):
         WHERE 1=1 {sc}
     """, sv, as_dict=True)[0]
 
-    # Staff role counts
-    staff_rows = frappe.db.sql("""
-        SELECT designation, COUNT(*) AS cnt
-        FROM `tabStaff details - WRP`
-        GROUP BY designation
-    """, as_dict=True)
-    pms = sum(r.cnt for r in staff_rows if r.designation and "PM" in r.designation.upper())
-    acs = sum(r.cnt for r in staff_rows if r.designation and "AC" in r.designation.upper())
+    # Staff role counts — use Frappe role assignments (avoids schema dependency)
+    pms = frappe.db.count("Has Role", {"role": "WRP-PM", "parenttype": "User"})
+    acs = frappe.db.count("Has Role", {"role": "WRP-AC", "parenttype": "User"})
 
     # 2. Pipeline (using same bucket logic as saturation report)
     pipeline = _pipeline_counts(sc, v)
