@@ -399,15 +399,17 @@ def get_drilldown(metric, level="org", parent=None, filters=None):
         filters = json.loads(filters)
     filters = filters or {}
     if parent:
-        # inject parent into scope
-        level_field = {
-            "org":    "implementing_org",
-            "iu":     "intervention_unit",
-            "street": "street",
-            "co":     "co",
+        # inject parent into scope — map current level to the PARENT's filter field
+        # (e.g. arriving at "iu" means the parent was an org → filter implementing_org)
+        parent_field = {
+            "iu":         "implementing_org",
+            "street":     "intervention_unit",
+            "co":         "street",
+            "hh":         "co",
+            "individual": "co",
         }.get(level)
-        if level_field:
-            filters[level_field] = parent
+        if parent_field:
+            filters[parent_field] = parent
 
     sc, sv = _scope(filters)
     if sc is None:
