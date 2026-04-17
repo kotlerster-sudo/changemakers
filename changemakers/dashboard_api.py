@@ -84,23 +84,23 @@ def get_dashboard_overview(filters=None):
         WHERE 1=1 {sc}
     """, sv, as_dict=True)[0]
 
-    # Staff role counts — scope-aware: join Has Role to Staff details via mail_id
-    org_filter = sv.get("implementing_org") or sv.get("user_org")
-    if org_filter:
-        def _role_count_for_org(role, org):
-            r = frappe.db.sql("""
-                SELECT COUNT(DISTINCT hr.parent) AS cnt
-                FROM `tabHas Role` hr
-                JOIN `tabStaff details - WRP` sd ON sd.mail_id = hr.parent
-                WHERE hr.role = %s AND hr.parenttype = 'User'
-                  AND sd.organisation = %s
-            """, (role, org), as_dict=True)
-            return int(r[0].cnt if r else 0)
-        pms = _role_count_for_org("WRP-PM", org_filter)
-        acs = _role_count_for_org("WRP-AC", org_filter)
-    else:
-        pms = frappe.db.count("Has Role", {"role": "WRP-PM", "parenttype": "User"})
-        acs = frappe.db.count("Has Role", {"role": "WRP-AC", "parenttype": "User"})
+    # Staff role counts — always scoped to same streets as the rest of the dashboard.
+    # Uses a subquery so street/IU/org filters all work correctly.
+    def _wrp_role_count(role):
+        r = frappe.db.sql(f"""
+            SELECT COUNT(DISTINCT hr.parent) AS cnt
+            FROM `tabHas Role` hr
+            JOIN `tabStaff details - WRP` sd ON sd.mail_id = hr.parent
+            WHERE hr.role = %(role)s AND hr.parenttype = 'User'
+              AND sd.organisation IN (
+                  SELECT DISTINCT sl.implementing_org
+                  FROM `tabStreet List  - WRP` sl
+                  WHERE 1=1 {sc}
+              )
+        """, {**sv, "role": role}, as_dict=True)
+        return int(r[0].cnt if r else 0)
+    pms = _wrp_role_count("WRP-PM")
+    acs = _wrp_role_count("WRP-AC")
 
     # 2. Pipeline (using same bucket logic as saturation report)
     pipeline = _pipeline_counts(sc, v)
