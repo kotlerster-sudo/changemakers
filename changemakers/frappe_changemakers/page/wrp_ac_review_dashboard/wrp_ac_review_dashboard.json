@@ -1,0 +1,17 @@
+{
+ "creation": "2026-04-22 00:00:00.000000",
+ "doctype": "Page",
+ "modified": "2026-04-22 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Changemakers",
+ "name": "wrp-ac-review-dashboard",
+ "owner": "Administrator",
+ "page_name": "wrp-ac-review-dashboard",
+ "roles": [
+  {"role": "WRP-AC"},
+  {"role": "WRP-PM"},
+  {"role": "System Manager"}
+ ],
+ "system_page": 0,
+ "title": "AC Review Dashboard"
+}

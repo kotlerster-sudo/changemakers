@@ -12,6 +12,74 @@ def _get_staff_member():
     return staff_member
 
 
+_AC_ESCALATION_THRESHOLD = 3
+
+
+def _run_ac_escalation(hh_groups, staff_member):
+    """
+    Detect households visited 3+ times with docs ready but no CMCHIS progress.
+    Sets is_escalated=True on each such hh_group entry and auto-creates a
+    WRP AC Review record (once per household — idempotent).
+    """
+    if not frappe.db.table_exists("WRP AC Review"):
+        return
+
+    candidates = {
+        hid: data for hid, data in hh_groups.items()
+        if data["members"]
+        and not data["is_active"]
+        and not data["is_rejected"]
+        and not data["is_applied"]
+        and data["max_visits"] >= _AC_ESCALATION_THRESHOLD
+    }
+    if not candidates:
+        return
+
+    # Households already in the review table (any status)
+    already_escalated = set(frappe.get_all(
+        "WRP AC Review",
+        filters={"household": ["in", list(candidates.keys())]},
+        pluck="household"
+    ))
+
+    # Mark all candidates as escalated (removes them from daily pool)
+    for hid in candidates:
+        hh_groups[hid]["is_escalated"] = True
+
+    new_hhids = set(candidates.keys()) - already_escalated
+    if not new_hhids:
+        return
+
+    # Fetch street details for AC + org info
+    street_names = list({candidates[hid]["street_name"] for hid in new_hhids})
+    street_rows = frappe.get_all(
+        "Street List  - WRP",
+        filters={"name": ["in", street_names]},
+        fields=["name", "ac_alloted", "added_by_co", "intervention_units", "implementing_org"]
+    )
+    street_map = {s.name: s for s in street_rows}
+
+    today_str = str(frappe.utils.nowdate())
+    for hid in new_hhids:
+        data = candidates[hid]
+        street = street_map.get(data["street_name"])
+        frappe.get_doc({
+            "doctype": "WRP AC Review",
+            "household": hid,
+            "respondent": data["respondent"],
+            "street": data["street_name"],
+            "ac_alloted": (street.ac_alloted or "") if street else "",
+            "co": (street.added_by_co or staff_member) if street else staff_member,
+            "intervention_unit": (street.intervention_units or "") if street else "",
+            "implementing_org": (street.implementing_org or "") if street else "",
+            "escalation_date": today_str,
+            "visit_count": data["max_visits"],
+            "status": "Pending AC Review",
+        }).insert(ignore_permissions=True)
+
+    frappe.db.commit()
+
+
 @frappe.whitelist()
 def get_daily_workplan(force_refresh=0):
     payload = {
@@ -148,6 +216,11 @@ def get_daily_workplan(force_refresh=0):
             if data["has_aadhaar"] and data["has_income"] and not data["is_active"] and not data["is_applied"]:
                 data["has_closer"] = True
 
+        # ── AC Review escalation ─────────────────────────────────────────────
+        # Households visited 3+ times with docs ready but no progress are removed
+        # from the daily pool and auto-escalated to the AC for that street.
+        _run_ac_escalation(hh_groups, staff_member)
+
         # Build full workplan buckets (all households, all statuses)
         for hid in hh_groups:
             data = hh_groups[hid]
@@ -213,10 +286,14 @@ def get_daily_workplan(force_refresh=0):
                     active_rejected_pool.append(data)
                     continue
 
+                # Escalated households exit the daily plan until AC resolves
+                if data.get("is_escalated"):
+                    continue
+
                 # Pool 1: unvisited, not active/rejected
                 if data["max_visits"] == 0:
                     unvisited_pool.append(data)
-                # Pool 2: both docs received, CMCHIS not yet applied
+                # Pool 2: both docs received, CMCHIS not yet applied, not escalated
                 elif data["has_aadhaar"] and data["has_income"] and not data["is_applied"]:
                     docs_ready_pool.append(data)
                 # Pool 3a: SLA overdue

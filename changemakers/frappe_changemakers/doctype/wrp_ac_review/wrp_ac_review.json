@@ -1,0 +1,124 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-04-22 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "household",
+  "respondent",
+  "street",
+  "ac_alloted",
+  "co",
+  "intervention_unit",
+  "implementing_org",
+  "escalation_date",
+  "visit_count",
+  "status",
+  "ac_notes",
+  "resolved_date"
+ ],
+ "fields": [
+  {
+   "fieldname": "household",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Household",
+   "reqd": 1
+  },
+  {
+   "fieldname": "respondent",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Respondent"
+  },
+  {
+   "fieldname": "street",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Street"
+  },
+  {
+   "fieldname": "ac_alloted",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "AC"
+  },
+  {
+   "fieldname": "co",
+   "fieldtype": "Data",
+   "label": "CO"
+  },
+  {
+   "fieldname": "intervention_unit",
+   "fieldtype": "Data",
+   "label": "Intervention Unit"
+  },
+  {
+   "fieldname": "implementing_org",
+   "fieldtype": "Data",
+   "label": "Organisation"
+  },
+  {
+   "fieldname": "escalation_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Escalated On",
+   "reqd": 1
+  },
+  {
+   "fieldname": "visit_count",
+   "fieldtype": "Int",
+   "label": "Visits at Escalation"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Pending AC Review\nCleared – Will Apply\nBlocked – No Resolution",
+   "reqd": 1
+  },
+  {
+   "fieldname": "ac_notes",
+   "fieldtype": "Small Text",
+   "label": "AC Notes"
+  },
+  {
+   "fieldname": "resolved_date",
+   "fieldtype": "Date",
+   "label": "Resolved On"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-04-22 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Changemakers",
+ "name": "WRP AC Review",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "write": 1,
+   "role": "System Manager",
+   "select": 1
+  },
+  {
+   "read": 1,
+   "write": 1,
+   "role": "WRP-AC",
+   "select": 1
+  },
+  {
+   "read": 1,
+   "role": "WRP-PM",
+   "select": 1
+  }
+ ],
+ "sort_field": "escalation_date",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

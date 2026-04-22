@@ -14,3 +14,4 @@ changemakers.patches.fix_saturation_report_and_workspace
 changemakers.patches.update_saturation_filters_v2
 # seed_cmchis_entitlement moved to after_migrate (runs after DocType sync)
 changemakers.patches.backfill_wrp_visit_log
+changemakers.patches.install_wrp_ac_review

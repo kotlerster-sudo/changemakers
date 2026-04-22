@@ -814,3 +814,73 @@ def _dd_co_low_impact(sc, sv):
         {"label": "Total HH",        "fieldname": "total_hh"},
     ]
     return rows, cols
+
+
+# ── AC Review ────────────────────────────────────────────────────────────────
+
+@frappe.whitelist()
+def get_ac_review_list(ac=None, status="Pending AC Review", street=None, intervention_unit=None):
+    """
+    Returns the AC Review list for the dashboard.
+    Defaults to Pending items; pass status='' to see all.
+    """
+    if not frappe.db.table_exists("WRP AC Review"):
+        return []
+
+    conds = []
+    vals = {"today": nowdate()}
+
+    if ac:
+        conds.append("ac_alloted = %(ac)s")
+        vals["ac"] = ac
+    if status:
+        conds.append("status = %(status)s")
+        vals["status"] = status
+    if street:
+        conds.append("street = %(street)s")
+        vals["street"] = street
+    if intervention_unit:
+        conds.append("intervention_unit = %(iu)s")
+        vals["iu"] = intervention_unit
+
+    where = ("WHERE " + " AND ".join(conds)) if conds else ""
+
+    return frappe.db.sql(f"""
+        SELECT
+            name,
+            household,
+            respondent,
+            street,
+            ac_alloted,
+            co,
+            visit_count,
+            escalation_date,
+            DATEDIFF(%(today)s, escalation_date) AS days_pending,
+            status,
+            ac_notes,
+            resolved_date,
+            intervention_unit,
+            implementing_org
+        FROM `tabWRP AC Review`
+        {where}
+        ORDER BY
+            FIELD(status, 'Pending AC Review', 'Blocked – No Resolution', 'Cleared – Will Apply'),
+            days_pending DESC
+    """, vals, as_dict=True)
+
+
+@frappe.whitelist()
+def resolve_ac_review(name, status, ac_notes=""):
+    """AC resolves an escalated household — updates status and resolved_date."""
+    allowed = {"Cleared – Will Apply", "Blocked – No Resolution"}
+    if status not in allowed:
+        frappe.throw(f"Invalid status. Must be one of: {', '.join(allowed)}")
+
+    doc = frappe.get_doc("WRP AC Review", name)
+    doc.status = status
+    doc.ac_notes = ac_notes
+    doc.resolved_date = nowdate()
+    doc.save(ignore_permissions=True)
+    frappe.db.commit()
+    return {"ok": True}
+
