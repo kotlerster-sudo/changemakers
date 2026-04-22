@@ -870,6 +870,30 @@ def get_ac_review_list(ac=None, status="Pending AC Review", street=None, interve
 
 
 @frappe.whitelist()
+def get_ac_review_filter_meta():
+    """
+    Returns distinct IU, street, and AC values for cascading filter dropdowns.
+    Each street entry carries its IU and AC so the frontend can cascade without
+    extra round-trips.
+    """
+    if not frappe.db.table_exists("WRP AC Review"):
+        return {"ius": [], "streets": [], "acs": []}
+
+    rows = frappe.db.sql("""
+        SELECT DISTINCT intervention_unit, street, ac_alloted
+        FROM `tabWRP AC Review`
+        WHERE intervention_unit IS NOT NULL AND intervention_unit != ''
+        ORDER BY intervention_unit, street
+    """, as_dict=True)
+
+    ius     = sorted({r.intervention_unit for r in rows if r.intervention_unit})
+    streets = [{"name": r.street, "iu": r.intervention_unit, "ac": r.ac_alloted or ""} for r in rows if r.street]
+    acs     = [{"ac": r.ac_alloted, "iu": r.intervention_unit} for r in rows if r.ac_alloted]
+
+    return {"ius": ius, "streets": streets, "acs": acs}
+
+
+@frappe.whitelist()
 def resolve_ac_review(name, status, ac_notes=""):
     """AC resolves an escalated household — updates status and resolved_date."""
     allowed = {"Cleared – Will Apply", "Blocked – No Resolution"}

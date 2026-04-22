@@ -1,6 +1,6 @@
 {
  "charts": [],
- "content": "[{\"id\":\"wrp_perf_h1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">WRP Performance</span>\",\"col\":12}},{\"id\":\"wrp_perf_p1\",\"type\":\"paragraph\",\"data\":{\"text\":\"CMCHIS progress and pipeline bottleneck tracking across COs, Streets and Intervention Units.\",\"col\":12}},{\"id\":\"wrp_perf_p2\",\"type\":\"paragraph\",\"data\":{\"text\":\"Performance\",\"col\":12}},{\"id\":\"wrp_perf_s1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"CO CMCHIS Performance\",\"col\":4}},{\"id\":\"wrp_perf_p3\",\"type\":\"paragraph\",\"data\":{\"text\":\"Delay & Bottleneck Analysis\",\"col\":12}},{\"id\":\"wrp_perf_s2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"CMCHIS Delay Analysis\",\"col\":4}}]",
+ "content": "[{\"id\":\"wrp_perf_h1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">WRP Performance</span>\",\"col\":12}},{\"id\":\"wrp_perf_p1\",\"type\":\"paragraph\",\"data\":{\"text\":\"CMCHIS progress and pipeline bottleneck tracking across COs, Streets and Intervention Units.\",\"col\":12}},{\"id\":\"wrp_perf_p2\",\"type\":\"paragraph\",\"data\":{\"text\":\"Performance\",\"col\":12}},{\"id\":\"wrp_perf_s1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"CO CMCHIS Performance\",\"col\":4}},{\"id\":\"wrp_perf_p3\",\"type\":\"paragraph\",\"data\":{\"text\":\"Delay & Bottleneck Analysis\",\"col\":12}},{\"id\":\"wrp_perf_s2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"CMCHIS Delay Analysis\",\"col\":4}},{\"id\":\"wrp_perf_p4\",\"type\":\"paragraph\",\"data\":{\"text\":\"AC Escalations\",\"col\":12}},{\"id\":\"wrp_perf_s3\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"AC Review Dashboard\",\"col\":4}}]",
  "creation": "2026-04-03 00:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -35,6 +35,12 @@
    "label": "CMCHIS Delay Analysis",
    "link_to": "CMCHIS Delay Analysis",
    "type": "Report"
+  },
+  {
+   "color": "Red",
+   "label": "AC Review Dashboard",
+   "link_to": "wrp-ac-review-dashboard",
+   "type": "Page"
   }
  ]
 }
