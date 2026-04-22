@@ -906,6 +906,9 @@ def get_application_trends(date_from=None, date_to=None, group_by="day", filters
         return [{"period": str(r.period), "label": str(r.label), "count": int(r.cnt)} for r in rows]
 
     def _total(field, pattern, exclude, count_col):
+        # Cumulative up to date_to — counts every distinct entity that was ever
+        # logged with this status transition up to the end of the selected window.
+        # This avoids undercounting when applications started before date_from.
         excl = f"AND new_value NOT LIKE %(excl)s" if exclude else ""
         qv   = {**sv, "field": field, "pattern": pattern}
         if exclude:
@@ -913,7 +916,7 @@ def get_application_trends(date_from=None, date_to=None, group_by="day", filters
         row = frappe.db.sql(f"""
             SELECT COUNT(DISTINCT {count_col}) AS cnt
             FROM `tabWRP Status Log`
-            WHERE DATE(changed_at) BETWEEN %(date_from)s AND %(date_to)s
+            WHERE DATE(changed_at) <= %(date_to)s
               AND field_changed = %(field)s
               AND new_value LIKE %(pattern)s
               {excl} {sc}

@@ -112,7 +112,7 @@ frappe.pages["wrp-application-trends"].on_page_load = function (wrapper) {
 				onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
 				<div style="font-size:30px;font-weight:700;color:#fff">${val}</div>
 				<div style="font-size:12px;color:rgba(255,255,255,.85);margin-top:2px">${label}</div>
-				<div style="font-size:10px;color:rgba(255,255,255,.7);margin-top:4px">Click to drill down ↓</div>
+				<div style="font-size:10px;color:rgba(255,255,255,.7);margin-top:4px">Cumulative up to selected end date · click to drill down ↓</div>
 			</div>`;
 		};
 		$("#apt-totals").html(card("aadhaar") + card("income") + card("cmchis"));
