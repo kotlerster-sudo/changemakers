@@ -816,6 +816,119 @@ def _dd_co_low_impact(sc, sv):
     return rows, cols
 
 
+# ── Application Trends ───────────────────────────────────────────────────────
+
+@frappe.whitelist()
+def get_application_trends(date_from=None, date_to=None, group_by="day", filters=None):
+    """
+    Per-period counts of Aadhaar, Income Cert, and CMCHIS applications.
+    group_by: "day" | "week" | "month"
+    Each row in the result has {period, label, count}.
+    """
+    if isinstance(filters, str):
+        filters = json.loads(filters)
+    filters = filters or {}
+
+    today     = nowdate()
+    date_from = date_from or str(get_first_day(today))
+    date_to   = date_to   or today
+
+    if group_by == "month":
+        period_expr = "DATE_FORMAT(changed_at, '%%Y-%%m')"
+        label_expr  = "DATE_FORMAT(changed_at, '%%b %%Y')"
+    elif group_by == "week":
+        # Monday of the ISO week
+        period_expr = "DATE_FORMAT(DATE_SUB(changed_at, INTERVAL WEEKDAY(changed_at) DAY), '%%Y-%%m-%%d')"
+        label_expr  = "DATE_FORMAT(DATE_SUB(changed_at, INTERVAL WEEKDAY(changed_at) DAY), '%%d %%b')"
+    else:
+        period_expr = "DATE(changed_at)"
+        label_expr  = "DATE_FORMAT(changed_at, '%%d %%b')"
+
+    sc = ""
+    sv = {"date_from": date_from, "date_to": date_to}
+
+    if filters.get("implementing_org"):
+        sc += " AND implementing_org = %(org)s"
+        sv["org"] = filters["implementing_org"]
+    if filters.get("intervention_unit"):
+        sc += " AND intervention_unit = %(iu)s"
+        sv["iu"] = filters["intervention_unit"]
+    if filters.get("ac"):
+        sc += " AND ac_name = %(ac)s"
+        sv["ac"] = filters["ac"]
+    if filters.get("street"):
+        sc += " AND street_name = %(street)s"
+        sv["street"] = filters["street"]
+    if filters.get("co"):
+        sc += " AND co_id = %(co)s"
+        sv["co"] = filters["co"]
+
+    # Restrict to the user's org if they are a WRP role (not System Manager)
+    wrp_roles = {"WRP-PM", "WRP-AC", "WRP-MIS"}
+    if wrp_roles.intersection(set(frappe.get_roles(frappe.session.user))):
+        org = frappe.db.get_value(
+            "Staff details - WRP", {"mail_id": frappe.session.user}, "organisation"
+        )
+        if org:
+            sc += " AND implementing_org = %(user_org)s"
+            sv["user_org"] = org
+
+    def _fetch(field, pattern, exclude=None):
+        excl = f"AND new_value NOT LIKE '{exclude}'" if exclude else ""
+        rows = frappe.db.sql(f"""
+            SELECT {period_expr} AS period,
+                   {label_expr}  AS label,
+                   COUNT(DISTINCT individual) AS cnt
+            FROM `tabWRP Status Log`
+            WHERE DATE(changed_at) BETWEEN %(date_from)s AND %(date_to)s
+              AND field_changed = %(field)s
+              AND new_value LIKE %(pattern)s
+              {excl} {sc}
+            GROUP BY period
+            ORDER BY period
+        """, {**sv, "field": field, "pattern": pattern}, as_dict=True)
+        return [{"period": str(r.period), "label": str(r.label), "count": int(r.cnt)} for r in rows]
+
+    return {
+        "aadhaar": _fetch("aadhaar_status", "%Applied%"),
+        "income":  _fetch("income_status",  "%Income Cert Applied%"),
+        "cmchis":  _fetch("cmchis_status",  "%Applied%", exclude="%%Not Applied%%"),
+    }
+
+
+@frappe.whitelist()
+def get_trends_filter_meta():
+    """Distinct values for Application Trends filter dropdowns."""
+    sc = ""
+    sv = {}
+    wrp_roles = {"WRP-PM", "WRP-AC", "WRP-MIS"}
+    if wrp_roles.intersection(set(frappe.get_roles(frappe.session.user))):
+        org = frappe.db.get_value(
+            "Staff details - WRP", {"mail_id": frappe.session.user}, "organisation"
+        )
+        if org:
+            sc = "AND implementing_org = %(user_org)s"
+            sv["user_org"] = org
+
+    def _distinct(col):
+        rows = frappe.db.sql(
+            f"SELECT DISTINCT {col} AS v FROM `tabWRP Status Log` WHERE {col} IS NOT NULL AND {col} != '' {sc} ORDER BY {col}",
+            sv, as_dict=True
+        )
+        return [r.v for r in rows]
+
+    return {
+        "orgs":    _distinct("implementing_org"),
+        "ius":     _distinct("intervention_unit"),
+        "acs":     _distinct("ac_name"),
+        "streets": _distinct("street_name"),
+        "cos":     frappe.db.sql(
+            f"SELECT DISTINCT co_id AS v, co_name AS label FROM `tabWRP Status Log` WHERE co_id IS NOT NULL AND co_id != '' {sc} ORDER BY co_name",
+            sv, as_dict=True
+        ),
+    }
+
+
 # ── AC Review ────────────────────────────────────────────────────────────────
 
 @frappe.whitelist()
