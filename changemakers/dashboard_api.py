@@ -818,35 +818,10 @@ def _dd_co_low_impact(sc, sv):
 
 # ── Application Trends ───────────────────────────────────────────────────────
 
-@frappe.whitelist()
-def get_application_trends(date_from=None, date_to=None, group_by="day", filters=None):
-    """
-    Per-period counts of Aadhaar, Income Cert, and CMCHIS applications.
-    group_by: "day" | "week" | "month"
-    Each row in the result has {period, label, count}.
-    """
-    if isinstance(filters, str):
-        filters = json.loads(filters)
-    filters = filters or {}
-
-    today     = nowdate()
-    date_from = date_from or str(get_first_day(today))
-    date_to   = date_to   or today
-
-    if group_by == "month":
-        period_expr = "DATE_FORMAT(changed_at, '%%Y-%%m')"
-        label_expr  = "DATE_FORMAT(changed_at, '%%b %%Y')"
-    elif group_by == "week":
-        # Monday of the ISO week
-        period_expr = "DATE_FORMAT(DATE_SUB(changed_at, INTERVAL WEEKDAY(changed_at) DAY), '%%Y-%%m-%%d')"
-        label_expr  = "DATE_FORMAT(DATE_SUB(changed_at, INTERVAL WEEKDAY(changed_at) DAY), '%%d %%b')"
-    else:
-        period_expr = "DATE(changed_at)"
-        label_expr  = "DATE_FORMAT(changed_at, '%%d %%b')"
-
+def _trends_scope(filters):
+    """Build scope cond+vals for Status Log queries, with user-org restriction."""
     sc = ""
-    sv = {"date_from": date_from, "date_to": date_to}
-
+    sv = {}
     if filters.get("implementing_org"):
         sc += " AND implementing_org = %(org)s"
         sv["org"] = filters["implementing_org"]
@@ -862,8 +837,6 @@ def get_application_trends(date_from=None, date_to=None, group_by="day", filters
     if filters.get("co"):
         sc += " AND co_id = %(co)s"
         sv["co"] = filters["co"]
-
-    # Restrict to the user's org if they are a WRP role (not System Manager)
     wrp_roles = {"WRP-PM", "WRP-AC", "WRP-MIS"}
     if wrp_roles.intersection(set(frappe.get_roles(frappe.session.user))):
         org = frappe.db.get_value(
@@ -872,13 +845,56 @@ def get_application_trends(date_from=None, date_to=None, group_by="day", filters
         if org:
             sc += " AND implementing_org = %(user_org)s"
             sv["user_org"] = org
+    return sc, sv
 
-    def _fetch(field, pattern, exclude=None):
-        excl = f"AND new_value NOT LIKE '{exclude}'" if exclude else ""
+
+# field → (SQL pattern, exclude pattern, count column)
+# CMCHIS is household-level so count hh_name; Aadhaar/Income are individual-level.
+_METRIC_DEF = {
+    "aadhaar": ("aadhaar_status", "%Applied%",            None,               "individual"),
+    "income":  ("income_status",  "%Income Cert Applied%", None,              "individual"),
+    "cmchis":  ("cmchis_status",  "%Applied%",            "%Not Applied%",    "hh_name"),
+}
+
+
+@frappe.whitelist()
+def get_application_trends(date_from=None, date_to=None, group_by="day", filters=None):
+    """
+    Per-period counts of Aadhaar, Income Cert, and CMCHIS applications.
+    group_by: "day" | "week" | "month"
+    Returns {aadhaar, income, cmchis} each as list of {period, label, count},
+    plus {totals} as {aadhaar, income, cmchis} counts over the full period.
+    """
+    if isinstance(filters, str):
+        filters = json.loads(filters)
+    filters = filters or {}
+
+    today     = nowdate()
+    date_from = date_from or str(get_first_day(today))
+    date_to   = date_to   or today
+
+    if group_by == "month":
+        period_expr = "DATE_FORMAT(changed_at, '%%Y-%%m')"
+        label_expr  = "DATE_FORMAT(changed_at, '%%b %%Y')"
+    elif group_by == "week":
+        period_expr = "DATE_FORMAT(DATE_SUB(changed_at, INTERVAL WEEKDAY(changed_at) DAY), '%%Y-%%m-%%d')"
+        label_expr  = "DATE_FORMAT(DATE_SUB(changed_at, INTERVAL WEEKDAY(changed_at) DAY), '%%d %%b')"
+    else:
+        period_expr = "DATE(changed_at)"
+        label_expr  = "DATE_FORMAT(changed_at, '%%d %%b')"
+
+    sc, sv = _trends_scope(filters)
+    sv.update({"date_from": date_from, "date_to": date_to})
+
+    def _fetch(field, pattern, exclude, count_col):
+        excl = f"AND new_value NOT LIKE %(excl)s" if exclude else ""
+        qv   = {**sv, "field": field, "pattern": pattern}
+        if exclude:
+            qv["excl"] = exclude
         rows = frappe.db.sql(f"""
             SELECT {period_expr} AS period,
                    {label_expr}  AS label,
-                   COUNT(DISTINCT individual) AS cnt
+                   COUNT(DISTINCT {count_col}) AS cnt
             FROM `tabWRP Status Log`
             WHERE DATE(changed_at) BETWEEN %(date_from)s AND %(date_to)s
               AND field_changed = %(field)s
@@ -886,14 +902,125 @@ def get_application_trends(date_from=None, date_to=None, group_by="day", filters
               {excl} {sc}
             GROUP BY period
             ORDER BY period
-        """, {**sv, "field": field, "pattern": pattern}, as_dict=True)
+        """, qv, as_dict=True)
         return [{"period": str(r.period), "label": str(r.label), "count": int(r.cnt)} for r in rows]
 
-    return {
-        "aadhaar": _fetch("aadhaar_status", "%Applied%"),
-        "income":  _fetch("income_status",  "%Income Cert Applied%"),
-        "cmchis":  _fetch("cmchis_status",  "%Applied%", exclude="%%Not Applied%%"),
-    }
+    def _total(field, pattern, exclude, count_col):
+        excl = f"AND new_value NOT LIKE %(excl)s" if exclude else ""
+        qv   = {**sv, "field": field, "pattern": pattern}
+        if exclude:
+            qv["excl"] = exclude
+        row = frappe.db.sql(f"""
+            SELECT COUNT(DISTINCT {count_col}) AS cnt
+            FROM `tabWRP Status Log`
+            WHERE DATE(changed_at) BETWEEN %(date_from)s AND %(date_to)s
+              AND field_changed = %(field)s
+              AND new_value LIKE %(pattern)s
+              {excl} {sc}
+        """, qv, as_dict=True)
+        return int(row[0].cnt if row else 0)
+
+    result = {}
+    totals = {}
+    for key, (field, pattern, exclude, count_col) in _METRIC_DEF.items():
+        result[key] = _fetch(field, pattern, exclude, count_col)
+        totals[key] = _total(field, pattern, exclude, count_col)
+
+    result["totals"] = totals
+    return result
+
+
+@frappe.whitelist()
+def get_application_drilldown(metric, date_from, date_to, level="org", filters=None):
+    """
+    Drilldown for a summary card.
+    metric: aadhaar | income | cmchis
+    level:  org | iu | street | hh
+    filters: {implementing_org, intervention_unit, street_name, ac, co}
+    """
+    if isinstance(filters, str):
+        filters = json.loads(filters)
+    filters = filters or {}
+
+    if metric not in _METRIC_DEF:
+        return []
+
+    field, pattern, exclude, count_col = _METRIC_DEF[metric]
+    sc, sv = _trends_scope(filters)
+    sv.update({"date_from": date_from, "date_to": date_to,
+               "field": field, "pattern": pattern})
+
+    excl = f"AND new_value NOT LIKE %(excl)s" if exclude else ""
+    if exclude:
+        sv["excl"] = exclude
+
+    base_where = f"""
+        WHERE DATE(changed_at) BETWEEN %(date_from)s AND %(date_to)s
+          AND field_changed = %(field)s
+          AND new_value LIKE %(pattern)s
+          {excl} {sc}
+    """
+
+    if level == "org":
+        rows = frappe.db.sql(f"""
+            SELECT implementing_org AS label,
+                   COUNT(DISTINCT {count_col}) AS cnt
+            FROM `tabWRP Status Log` {base_where}
+            GROUP BY implementing_org
+            ORDER BY cnt DESC
+        """, sv, as_dict=True)
+        return [{"label": r.label or "—", "count": int(r.cnt), "key": r.label} for r in rows]
+
+    if level == "iu":
+        rows = frappe.db.sql(f"""
+            SELECT intervention_unit AS label,
+                   COUNT(DISTINCT {count_col}) AS cnt
+            FROM `tabWRP Status Log` {base_where}
+            GROUP BY intervention_unit
+            ORDER BY cnt DESC
+        """, sv, as_dict=True)
+        return [{"label": r.label or "—", "count": int(r.cnt), "key": r.label} for r in rows]
+
+    if level == "street":
+        rows = frappe.db.sql(f"""
+            SELECT street_name AS label,
+                   COUNT(DISTINCT {count_col}) AS cnt
+            FROM `tabWRP Status Log` {base_where}
+            GROUP BY street_name
+            ORDER BY cnt DESC
+        """, sv, as_dict=True)
+        return [{"label": r.label or "—", "count": int(r.cnt), "key": r.label} for r in rows]
+
+    if level == "hh":
+        if metric == "cmchis":
+            rows = frappe.db.sql(f"""
+                SELECT hh_name, street_name, intervention_unit, implementing_org,
+                       ac_name, co_name, MAX(DATE(changed_at)) AS applied_on
+                FROM `tabWRP Status Log` {base_where}
+                GROUP BY hh_name, street_name, intervention_unit, implementing_org, ac_name, co_name
+                ORDER BY applied_on DESC
+            """, sv, as_dict=True)
+            return [{
+                "hh":     r.hh_name, "street": r.street_name,
+                "iu":     r.intervention_unit, "org": r.implementing_org,
+                "ac":     r.ac_name, "co": r.co_name, "date": str(r.applied_on),
+            } for r in rows]
+        else:
+            rows = frappe.db.sql(f"""
+                SELECT individual, hh_name, street_name, co_name,
+                       MAX(DATE(changed_at)) AS applied_on
+                FROM `tabWRP Status Log` {base_where}
+                  AND individual IS NOT NULL AND individual != ''
+                GROUP BY individual, hh_name, street_name, co_name
+                ORDER BY applied_on DESC
+            """, sv, as_dict=True)
+            return [{
+                "individual": r.individual, "hh": r.hh_name,
+                "street":     r.street_name, "co": r.co_name,
+                "date":       str(r.applied_on),
+            } for r in rows]
+
+    return []
 
 
 @frappe.whitelist()
