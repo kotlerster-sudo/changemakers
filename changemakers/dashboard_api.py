@@ -73,22 +73,22 @@ def get_dashboard_overview(filters=None):
 
     v = _v(sv)
 
-    # 1. Structure
+    # 1. Structure — all counts come directly from Street List so they
+    # respect scope filters without any cross-table string matching.
     struct = frappe.db.sql(f"""
         SELECT
             COUNT(DISTINCT sl.implementing_org)  AS orgs,
             COUNT(DISTINCT sl.intervention_units) AS ius,
             COUNT(DISTINCT sl.name)               AS streets,
-            COUNT(DISTINCT sl.added_by_co)        AS cos
+            COUNT(DISTINCT sl.added_by_co)        AS cos,
+            COUNT(DISTINCT sl.ac_alloted)         AS acs
         FROM `tabStreet List  - WRP` sl
         WHERE 1=1 {sc}
     """, sv, as_dict=True)[0]
+    acs = int(struct.acs or 0)
 
-    # Staff role counts scoped to the current filter.
-    # When the org is known (from an explicit filter or the user's own scope),
-    # match Staff details directly — avoids a mismatch when sd.organisation and
-    # sl.implementing_org were entered with different strings for the same org.
-    def _wrp_role_count(role):
+    # PM count still requires a role lookup (no pm field on Street List)
+    def _pm_count():
         known_orgs = list({
             v for k, v in sv.items()
             if k in ("implementing_org", "user_org") and v
@@ -98,29 +98,25 @@ def get_dashboard_overview(filters=None):
                 SELECT COUNT(DISTINCT hr.parent) AS cnt
                 FROM `tabHas Role` hr
                 JOIN `tabStaff details - WRP` sd ON sd.mail_id = hr.parent
-                WHERE hr.role = %(role)s AND hr.parenttype = 'User'
+                WHERE hr.role = 'WRP-PM' AND hr.parenttype = 'User'
                   AND TRIM(sd.organisation) = TRIM(%(org)s)
-            """, {"role": role, "org": known_orgs[0]}, as_dict=True)
+            """, {"org": known_orgs[0]}, as_dict=True)
         elif len(known_orgs) == 2 and known_orgs[0] != known_orgs[1]:
-            # Two conflicting org scopes — same situation that makes the struct
-            # query return 0 (user filtered for an org outside their own scope)
             return 0
         else:
-            # No org filter (admin unscoped view) — fall back to subquery
             r = frappe.db.sql(f"""
                 SELECT COUNT(DISTINCT hr.parent) AS cnt
                 FROM `tabHas Role` hr
                 JOIN `tabStaff details - WRP` sd ON sd.mail_id = hr.parent
-                WHERE hr.role = %(role)s AND hr.parenttype = 'User'
+                WHERE hr.role = 'WRP-PM' AND hr.parenttype = 'User'
                   AND sd.organisation IN (
                       SELECT DISTINCT sl.implementing_org
                       FROM `tabStreet List  - WRP` sl
                       WHERE 1=1 {sc}
                   )
-            """, {**sv, "role": role}, as_dict=True)
+            """, sv, as_dict=True)
         return int(r[0].cnt if r else 0)
-    pms = _wrp_role_count("WRP-PM")
-    acs = _wrp_role_count("WRP-AC")
+    pms = _pm_count()
 
     # 2. Pipeline (using same bucket logic as saturation report)
     pipeline = _pipeline_counts(sc, v)
