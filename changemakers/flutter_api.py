@@ -94,9 +94,18 @@ def get_daily_workplan(force_refresh=0):
             payload["error_caught"] = f"Staff profile not found for {frappe.session.user}"
             return payload
 
-        assigned_streets = frappe.get_all("Street List  - WRP", filters={"added_by_co": staff_member}, pluck="name")
-        if not assigned_streets:
+        street_rows = frappe.get_all(
+            "Street List  - WRP",
+            filters={"added_by_co": staff_member},
+            fields=["name", "intervention_units"]
+        )
+        if not street_rows:
             return payload
+        assigned_streets = [s.name for s in street_rows]
+        semmenchery_streets = {
+            s.name for s in street_rows
+            if "semmenchery" in (s.intervention_units or "").lower()
+        }
 
         households = frappe.get_all(
             "Household Profile-WRP",
@@ -105,7 +114,7 @@ def get_daily_workplan(force_refresh=0):
                 "survay_status": "Occupied/உள்ளனர்",
                 "availability_for": "Going Ahead/துவங்கலாம்"
             },
-            fields=["name", "street_name", "cmchis_status", "respondent"]
+            fields=["name", "street_name", "cmchis_status", "respondent", "address"]
         )
         hh_map = {str(h.name): h for h in households}
         if not hh_map:
@@ -129,10 +138,12 @@ def get_daily_workplan(force_refresh=0):
         for hid in hh_map:
             h_data = hh_map[hid]
             c_raw = str(h_data.get("cmchis_status") or "Start – CMCHIS not applied")
+            street = str(h_data.get("street_name") or "")
             hh_groups[hid] = {
                 "hhid": hid,
-                "street_name": str(h_data.get("street_name") or "Unknown"),
+                "street_name": street or "Unknown",
                 "respondent": str(h_data.get("respondent") or "Unknown"),
+                "address": str(h_data.get("address") or "") if street in semmenchery_streets else "",
                 "cmchis_status": c_raw,
                 "members": [],
                 "max_visits": 0,
