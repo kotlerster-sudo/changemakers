@@ -45,8 +45,37 @@ frappe.pages["wrp-ac-review-dashboard"].on_page_load = function (wrapper) {
 	page.add_inner_button("Refresh", () => loadFilters());
 
 	// ── Container ─────────────────────────────────────────────────────────────
-	$(`<div style="padding:16px">
-		<div id="ac-review-summary" style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap"></div>
+	$(`<style>
+		@media (max-width: 767px) {
+			.ac-desktop-table { display: none !important; }
+			.ac-mobile-cards  { display: block !important; }
+		}
+		@media (min-width: 768px) {
+			.ac-desktop-table { display: table !important; }
+			.ac-mobile-cards  { display: none !important; }
+		}
+		.ac-mobile-card {
+			background: #fff;
+			border: 1px solid #e8e8e8;
+			border-radius: 8px;
+			padding: 12px 14px;
+			margin-bottom: 10px;
+		}
+		.ac-mobile-card-top {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			margin-bottom: 4px;
+		}
+		.ac-mobile-card-sub {
+			font-size: 12px;
+			color: #666;
+			margin-bottom: 8px;
+		}
+		.ac-mobile-card-actions { display: flex; gap: 8px; margin-top: 8px; }
+	</style>
+	<div style="padding:12px 16px">
+		<div id="ac-review-summary" style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap"></div>
 		<div id="ac-review-table"></div>
 	</div>`).appendTo($(wrapper).find(".page-content"));
 
@@ -131,7 +160,9 @@ frappe.pages["wrp-ac-review-dashboard"].on_page_load = function (wrapper) {
 		const pending = rows.filter(r => r.status === "Pending AC Review").length;
 		const cleared = rows.filter(r => r.status === "Cleared – Will Apply").length;
 		const blocked = rows.filter(r => r.status === "Blocked – No Resolution").length;
-		const oldest  = rows.length ? Math.max(...rows.map(r => r.days_pending || 0)) : 0;
+		const fresh  = rows.filter(r => (r.days_pending || 0) <= 7).length;
+		const mid    = rows.filter(r => (r.days_pending || 0) > 7 && (r.days_pending || 0) <= 14).length;
+		const stale  = rows.filter(r => (r.days_pending || 0) > 14).length;
 
 		const card = (label, val, color) =>
 			`<div style="background:${color};border-radius:8px;padding:12px 20px;min-width:120px;text-align:center">
@@ -139,11 +170,23 @@ frappe.pages["wrp-ac-review-dashboard"].on_page_load = function (wrapper) {
 				<div style="font-size:12px;color:rgba(255,255,255,.85)">${label}</div>
 			</div>`;
 
+		const ageBucketCard = `
+			<div style="background:#2980b9;border-radius:8px;padding:12px 20px;min-width:160px;text-align:center">
+				<div style="display:flex;justify-content:center;gap:14px;align-items:baseline">
+					<span style="font-size:20px;font-weight:700;color:#fff">${fresh}</span>
+					<span style="font-size:11px;color:rgba(255,255,255,.7)">|</span>
+					<span style="font-size:20px;font-weight:700;color:#f39c12">${mid}</span>
+					<span style="font-size:11px;color:rgba(255,255,255,.7)">|</span>
+					<span style="font-size:20px;font-weight:700;color:#e74c3c">${stale}</span>
+				</div>
+				<div style="font-size:11px;color:rgba(255,255,255,.75);margin-top:4px">≤7d &nbsp;·&nbsp; 8–14d &nbsp;·&nbsp; &gt;14d</div>
+			</div>`;
+
 		$("#ac-review-summary").html(
-			card("Pending",      pending, "#e74c3c") +
-			card("Cleared",      cleared, "#27ae60") +
-			card("Blocked",      blocked, "#7f8c8d") +
-			card("Oldest (days)",oldest,  "#2980b9")
+			card("Pending", pending, "#e74c3c") +
+			card("Cleared", cleared, "#27ae60") +
+			card("Blocked", blocked, "#7f8c8d") +
+			ageBucketCard
 		);
 	}
 
@@ -156,6 +199,7 @@ frappe.pages["wrp-ac-review-dashboard"].on_page_load = function (wrapper) {
 
 		const isPending = !statusFilter || statusFilter === "Pending AC Review";
 
+		// ── Desktop table ──────────────────────────────────────────────────────
 		const header = `<thead>
 			<tr style="background:#f4f4f4;font-size:12px;text-transform:uppercase;color:#555">
 				<th style="padding:8px 12px">Household</th>
@@ -173,18 +217,8 @@ frappe.pages["wrp-ac-review-dashboard"].on_page_load = function (wrapper) {
 
 		const bodyRows = rows.map((r, i) => {
 			const bg       = i % 2 === 0 ? "#fff" : "#fafafa";
-			const dayBadge = r.days_pending > 7
-				? `<span style="color:#e74c3c;font-weight:600">${r.days_pending}</span>`
-				: r.days_pending;
-			const actions  = isPending
-				? `<td style="padding:8px 12px;white-space:nowrap">
-					<button class="btn btn-xs btn-success ac-action" data-name="${r.name}"
-						data-status="Cleared – Will Apply" style="margin-right:4px">Cleared</button>
-					<button class="btn btn-xs btn-danger ac-action" data-name="${r.name}"
-						data-status="Blocked – No Resolution">Blocked</button>
-				  </td>`
-				: "";
-
+			const dayBadge = dayBadgeHtml(r.days_pending);
+			const actions  = isPending ? actionCellHtml(r.name) : "";
 			return `<tr style="background:${bg};font-size:13px">
 				<td style="padding:8px 12px;font-family:monospace">${r.household}</td>
 				<td style="padding:8px 12px">${r.respondent || "—"}</td>
@@ -199,10 +233,37 @@ frappe.pages["wrp-ac-review-dashboard"].on_page_load = function (wrapper) {
 			</tr>`;
 		}).join("");
 
-		$("#ac-review-table").html(`
-			<table style="width:100%;border-collapse:collapse;border:1px solid #eee;border-radius:8px;overflow:hidden">
+		const desktopHtml = `
+			<table class="ac-desktop-table" style="width:100%;border-collapse:collapse;border:1px solid #eee;border-radius:8px;overflow:hidden">
 				${header}<tbody>${bodyRows}</tbody>
-			</table>`);
+			</table>`;
+
+		// ── Mobile cards ───────────────────────────────────────────────────────
+		const cards = rows.map(r => {
+			const days = r.days_pending || 0;
+			const dayColor = days > 14 ? "#e74c3c" : days > 7 ? "#e67e22" : "#27ae60";
+			const actionBtns = isPending
+				? `<div class="ac-mobile-card-actions">
+					<button class="btn btn-sm btn-success ac-action" data-name="${r.name}"
+						data-status="Cleared – Will Apply" style="flex:1">Cleared</button>
+					<button class="btn btn-sm btn-danger ac-action" data-name="${r.name}"
+						data-status="Blocked – No Resolution" style="flex:1">Blocked</button>
+				   </div>`
+				: "";
+			return `<div class="ac-mobile-card">
+				<div class="ac-mobile-card-top">
+					<span style="font-family:monospace;font-size:13px;font-weight:600">${r.household}</span>
+					<span style="font-size:13px;font-weight:700;color:${dayColor}">${days}d &nbsp;${statusBadgeHtml(r.status)}</span>
+				</div>
+				<div style="font-size:14px;font-weight:500;margin-bottom:2px">${r.respondent || "—"}</div>
+				<div class="ac-mobile-card-sub">${r.street || "—"} &nbsp;·&nbsp; CO: ${r.co || "—"} &nbsp;·&nbsp; ${r.visit_count} visits</div>
+				${actionBtns}
+			</div>`;
+		}).join("");
+
+		const mobileHtml = `<div class="ac-mobile-cards">${cards}</div>`;
+
+		$("#ac-review-table").html(desktopHtml + mobileHtml);
 
 		$(".ac-action").on("click", function () {
 			const name   = $(this).data("name");
@@ -222,6 +283,23 @@ frappe.pages["wrp-ac-review-dashboard"].on_page_load = function (wrapper) {
 				`Mark as: ${status}`, "Confirm"
 			);
 		});
+	}
+
+	function dayBadgeHtml(days) {
+		const d = days || 0;
+		const color = d > 14 ? "#e74c3c" : d > 7 ? "#e67e22" : "inherit";
+		return color !== "inherit"
+			? `<span style="color:${color};font-weight:600">${d}</span>`
+			: d;
+	}
+
+	function actionCellHtml(name) {
+		return `<td style="padding:8px 12px;white-space:nowrap">
+			<button class="btn btn-xs btn-success ac-action" data-name="${name}"
+				data-status="Cleared – Will Apply" style="margin-right:4px">Cleared</button>
+			<button class="btn btn-xs btn-danger ac-action" data-name="${name}"
+				data-status="Blocked – No Resolution">Blocked</button>
+		</td>`;
 	}
 
 	function statusBadgeHtml(status) {
