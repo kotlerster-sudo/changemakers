@@ -21,6 +21,9 @@ def enrol_new_oap_eligibles():
             i.name                   AS ind_id,
             i.name_of_the_individual AS full_name,
             i.dob                    AS dob,
+            i.can_id                 AS can_id,
+            i.esm_login_id           AS esm_login_id,
+            i.phone                  AS login_phone,
             h.street_name            AS street
         FROM `tabIndividual Profile-WRP` i
         LEFT JOIN `tabHousehold Profile-WRP` h ON h.name = i.hhid
@@ -64,6 +67,9 @@ def enrol_new_oap_eligibles():
                 "source_docname":   str(r.ind_id),
                 "street":           r.street,
                 "assigned_co":      co_map.get(r.street) or "",
+                "can_id":           str(r.can_id or ""),
+                "esm_login_id":     str(r.esm_login_id or ""),
+                "login_phone":      str(r.login_phone or ""),
                 "doc1_status":      "not_checked",
                 "doc2_status":      "not_checked",
                 "doc3_status":      "not_checked",

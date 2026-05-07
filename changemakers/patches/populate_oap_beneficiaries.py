@@ -3,6 +3,7 @@ Populate Generic Beneficiary records for Old Age Pension (E2).
 
 Source: Individual Profile-WRP where age >= 60 and status = Active.
 Street and CO are resolved via Household Profile-WRP → Street List - WRP.
+CAN credentials are pre-populated from Individual Profile-WRP where available.
 
 Idempotent: skips individuals already imported (matched by source_docname + E2).
 
@@ -13,7 +14,6 @@ Dry-run (prints counts, creates nothing):
   bench --site <site> execute changemakers.patches.populate_oap_beneficiaries.execute --kwargs '{"dry_run": true}'
 """
 import frappe
-from frappe.utils import getdate, nowdate
 
 
 ENTITLEMENT = "E2"
@@ -37,11 +37,14 @@ def execute(dry_run=False):
     # ── Fetch all eligible individuals in one SQL query ───────────────────────
     rows = frappe.db.sql("""
         SELECT
-            i.name            AS ind_id,
+            i.name                   AS ind_id,
             i.name_of_the_individual AS full_name,
-            i.dob             AS dob,
-            i.hhid            AS hhid,
-            h.street_name     AS street
+            i.dob                    AS dob,
+            i.hhid                   AS hhid,
+            i.can_id                 AS can_id,
+            i.esm_login_id           AS esm_login_id,
+            i.phone                  AS login_phone,
+            h.street_name            AS street
         FROM `tabIndividual Profile-WRP` i
         LEFT JOIN `tabHousehold Profile-WRP` h ON h.name = i.hhid
         WHERE
@@ -85,27 +88,28 @@ def execute(dry_run=False):
             continue
 
         try:
-            doc = frappe.get_doc({
-                "doctype":        "Generic Beneficiary",
-                "entitlement":    ENTITLEMENT,
+            frappe.get_doc({
+                "doctype":          "Generic Beneficiary",
+                "entitlement":      ENTITLEMENT,
                 "beneficiary_name": str(r.full_name or ""),
-                "date_of_birth":  r.dob,
-                "source_docname": ind_id,
-                "street":         r.street,
-                "assigned_co":    co_map.get(r.street) or "",
-                "doc1_status":    "not_checked",
-                "doc2_status":    "not_checked",
-                "doc3_status":    "not_checked",
-                "final_status":   "not_applied",
-                "visit_count":    0,
-            })
-            doc.insert(ignore_permissions=True)
+                "date_of_birth":    r.dob,
+                "source_docname":   ind_id,
+                "street":           r.street,
+                "assigned_co":      co_map.get(r.street) or "",
+                "can_id":           str(r.can_id or ""),
+                "esm_login_id":     str(r.esm_login_id or ""),
+                "login_phone":      str(r.login_phone or ""),
+                "doc1_status":      "not_checked",
+                "doc2_status":      "not_checked",
+                "doc3_status":      "not_checked",
+                "final_status":     "not_applied",
+                "visit_count":      0,
+            }).insert(ignore_permissions=True)
             created += 1
         except Exception:
             frappe.log_error(frappe.get_traceback(), f"populate_oap: insert failed for ind {ind_id}")
             continue
 
-        # Commit in batches to keep transactions small
         if created % BATCH_SIZE == 0:
             frappe.db.commit()
             frappe.logger().info(f"populate_oap: {created} created so far…")
