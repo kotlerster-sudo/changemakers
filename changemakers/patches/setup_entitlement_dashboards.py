@@ -51,7 +51,7 @@ def _upsert_workspace(name, title, roles, html_block_name, module="Frappe Change
     content = json.dumps([
         {
             "id": block_id,
-            "type": "custom-block",
+            "type": "custom_block",
             "data": {"custom_block_name": html_block_name, "col": 12},
         }
     ])
