@@ -8,19 +8,19 @@ import frappe
 
 WORKSPACES = [
     {
-        "name":            "OAP Programme",
+        "name":            "OAP Programme Dashboard",
         "title":           "OAP Programme Dashboard",
         "html_block_name": "Entitlement Programme Dashboard",
         "roles":           ["WRP-PM", "WRP-HR", "WRP-MIS", "System Manager"],
     },
     {
-        "name":            "OAP AC Review",
+        "name":            "OAP AC Review Dashboard",
         "title":           "OAP AC Review Dashboard",
         "html_block_name": "Entitlement AC Dashboard",
         "roles":           ["WRP-AC", "WRP-PM", "System Manager"],
     },
     {
-        "name":            "OAP MIS",
+        "name":            "OAP MIS Dashboard",
         "title":           "OAP MIS Dashboard",
         "html_block_name": "Entitlement MIS Dashboard",
         "roles":           ["WRP-MIS", "WRP-PM", "System Manager"],
