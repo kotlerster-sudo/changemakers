@@ -500,11 +500,13 @@ def _upsert_workspace(name, title, roles, html_block_name, module="Frappe Change
     for role in roles:
         doc.append("roles", {"role": role})
 
-    # Populate custom_blocks child table — required for page_data loader
+    # Populate custom_blocks child table — required for page_data loader.
+    # Leave label blank: desktop.py falls back to custom_block_name as label,
+    # which must match the custom_block_name key in the content JSON.
     doc.set("custom_blocks", [])
     doc.append("custom_blocks", {
         "custom_block_name": html_block_name,
-        "label": title,
+        "label": "",
     })
 
     if doc.is_new():
