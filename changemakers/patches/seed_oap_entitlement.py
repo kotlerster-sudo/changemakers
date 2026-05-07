@@ -6,19 +6,19 @@ exist (Frappe does not insert nested child tables automatically).
 import frappe
 
 SLOT_STATUSES = {
-    "doc1": [
+    "doc1_status": [
         {"status_value": "not_checked", "label": "Not Checked",             "is_terminal": 0, "starts_sla": 0, "color": "grey",   "sort_order": 1},
         {"status_value": "present",     "label": "Name on Ration Card",     "is_terminal": 1, "starts_sla": 0, "color": "green",  "sort_order": 2},
         {"status_value": "absent",      "label": "Name Not on Ration Card", "is_terminal": 1, "starts_sla": 0, "color": "red",    "sort_order": 3},
     ],
-    "doc2": [
+    "doc2_status": [
         {"status_value": "not_checked",         "label": "Not Checked",                         "is_terminal": 0, "starts_sla": 0, "color": "grey",   "sort_order": 1},
         {"status_value": "valid",               "label": "Aadhaar Valid",                       "is_terminal": 1, "starts_sla": 0, "color": "green",  "sort_order": 2},
         {"status_value": "internal_correction", "label": "Internal Correction Initiated (~7d)", "is_terminal": 0, "starts_sla": 1, "color": "blue",   "sort_order": 3},
         {"status_value": "external_correction", "label": "Camp / e-Seva Scheduled (~14d)",      "is_terminal": 0, "starts_sla": 1, "color": "purple", "sort_order": 4},
         {"status_value": "corrected",           "label": "Aadhaar Corrected",                   "is_terminal": 1, "starts_sla": 0, "color": "green",  "sort_order": 5},
     ],
-    "doc3": [
+    "doc3_status": [
         {"status_value": "not_checked",    "label": "Not Checked",                    "is_terminal": 0, "starts_sla": 0, "color": "grey",   "sort_order": 1},
         {"status_value": "active",         "label": "Active Bank Account",            "is_terminal": 1, "starts_sla": 0, "color": "green",  "sort_order": 2},
         {"status_value": "dormant",        "label": "Dormant - Reactivation Pending", "is_terminal": 0, "starts_sla": 1, "color": "orange", "sort_order": 3},
@@ -48,9 +48,9 @@ def execute():
             "unlock_rule":        "ALL_REQUIRED_TERMINAL",
             "goal_status_value":  "active",
             "doc_slots": [
-                {"slot_number": 1, "slot_key": "doc1", "label": "Ration Card",   "sla_days": 0,  "required_for_unlock": 1},
-                {"slot_number": 2, "slot_key": "doc2", "label": "Aadhaar",       "sla_days": 14, "required_for_unlock": 1},
-                {"slot_number": 3, "slot_key": "doc3", "label": "Bank Account",  "sla_days": 10, "required_for_unlock": 1},
+                {"slot_number": 1, "slot_key": "doc1_status", "label": "Ration Card",   "sla_days": 0,  "required_for_unlock": 1},
+                {"slot_number": 2, "slot_key": "doc2_status", "label": "Aadhaar",       "sla_days": 14, "required_for_unlock": 1},
+                {"slot_number": 3, "slot_key": "doc3_status", "label": "Bank Account",  "sla_days": 10, "required_for_unlock": 1},
             ],
             "final_statuses": [
                 {"status_value": "not_applied", "label": "Not Applied",              "is_goal": 0, "is_negative": 0, "requires_unlock": 0, "color": "grey",  "sort_order": 1},

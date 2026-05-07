@@ -224,7 +224,8 @@ def get_daily_workplan_v2(entitlement_code, co_id=None, date=None, force_refresh
         filters={"entitlement": entitlement_code, "street": ["in", streets]},
         fields=["name", "beneficiary_name", "container", "street",
                 "doc1_status", "doc2_status", "doc3_status", "doc4_status",
-                "final_status", "visit_count", "last_visited_at"],
+                "final_status", "visit_count", "last_visited_at",
+                "login_phone", "can_id"],
     )
 
     # Get container final statuses if needed
@@ -363,31 +364,45 @@ def save_beneficiary_status(
     final_status=None,
     container_id=None,
     notes=None,
+    doc_statuses_json=None,
 ):
     """
     Generic status save for any entitlement.
 
-    doc_slot:     "doc1" | "doc2" | "doc3" | "doc4" (update a document status)
-    final_status: update the final status (at container or individual level)
-    Both can be passed in one call.
+    doc_statuses_json: JSON dict {slot_key: value} for batch updates (preferred).
+    doc_slot + new_status: legacy single-slot update (backward compat).
+    final_status: update the final status (at container or individual level).
     """
     config = _load_config(entitlement_code)
-
     beneficiary = frappe.get_doc("Generic Beneficiary", beneficiary_id)
-    changed = False
+    valid_slots = {s["slot_key"] for s in config["slots"]}
 
-    if doc_slot and new_status is not None:
-        valid_slots = {s["slot_key"] for s in config["slots"]}
+    # Batch doc status update (preferred — one call per visit)
+    if doc_statuses_json:
+        ds = json.loads(doc_statuses_json) if isinstance(doc_statuses_json, str) else doc_statuses_json
+        for slot_key, new_val in (ds or {}).items():
+            if slot_key not in valid_slots:
+                continue
+            old_val = getattr(beneficiary, slot_key, "") or ""
+            if old_val != new_val:
+                setattr(beneficiary, slot_key, new_val)
+                _log_status(
+                    entitlement_code, beneficiary_id,
+                    container_id or beneficiary.container,
+                    slot_key, old_val, new_val, config,
+                )
+
+    # Single-slot update (legacy / backward compat)
+    elif doc_slot and new_status is not None:
         if doc_slot not in valid_slots:
-            frappe.throw(f"Invalid doc_slot '{doc_slot}' for entitlement {entitlement_code}")
+            frappe.throw(f"Invalid doc_slot '{doc_slot}' for {entitlement_code}")
         old_val = getattr(beneficiary, doc_slot, "") or ""
         if old_val != new_status:
             setattr(beneficiary, doc_slot, new_status)
-            changed = True
             _log_status(
                 entitlement_code, beneficiary_id,
                 container_id or beneficiary.container,
-                doc_slot, old_val, new_status, config
+                doc_slot, old_val, new_status, config,
             )
 
     if final_status is not None:
@@ -400,35 +415,29 @@ def save_beneficiary_status(
                 container.save(ignore_permissions=True)
                 _log_status(
                     entitlement_code, beneficiary_id, cid,
-                    "final_status", old_final, final_status, config
+                    "final_status", old_final, final_status, config,
                 )
         else:
             old_final = beneficiary.final_status or ""
             if old_final != final_status:
                 beneficiary.final_status = final_status
-                changed = True
                 _log_status(
                     entitlement_code, beneficiary_id,
                     container_id or beneficiary.container,
-                    "final_status", old_final, final_status, config
+                    "final_status", old_final, final_status, config,
                 )
 
     if notes is not None:
         beneficiary.notes = notes
-        changed = True
 
-    # Update visit tracking
     beneficiary.visit_count = int(beneficiary.visit_count or 0) + 1
     beneficiary.last_visited_at = now_datetime()
-
     beneficiary.save(ignore_permissions=True)
 
-    # Bust cache
     co_id = beneficiary.assigned_co
     if co_id:
-        today = getdate(nowdate())
         frappe.cache().delete_value(
-            f"generic_workplan:{entitlement_code}:{co_id}:{today}"
+            f"generic_workplan:{entitlement_code}:{co_id}:{getdate(nowdate())}"
         )
 
     return {"status": "ok", "beneficiary": beneficiary_id}
@@ -642,7 +651,8 @@ def get_co_schemes():
 def get_co_performance_v2(entitlement_code, co_id=None):
     """
     Generic CO performance metrics for any entitlement.
-    Returns bucket counts, saturation %, coverage %, and drilldown lists.
+    Returns bucket counts, saturation %, coverage %, drilldown lists,
+    and pending_actions (slot-combination groups for actionable work).
     """
     if not co_id:
         co_id = frappe.db.get_value(
@@ -659,7 +669,8 @@ def get_co_performance_v2(entitlement_code, co_id=None):
         pluck="name",
     )
     if not streets:
-        return {"buckets": {}, "total": 0, "saturation_pct": 0}
+        return {"buckets": {}, "total": 0, "saturation_pct": 0,
+                "pending_actions": [], "slot_info": []}
 
     beneficiaries = frappe.get_all(
         "Generic Beneficiary",
@@ -680,23 +691,97 @@ def get_co_performance_v2(entitlement_code, co_id=None):
             )
             container_finals = {r.name: r.final_status or "" for r in rows}
 
+    def _fmt(b):
+        return {
+            "name":             b.name,
+            "beneficiary_name": b.beneficiary_name or "",
+            "street":           b.street or "",
+            "last_visited_at":  str(b.last_visited_at) if b.last_visited_at else "",
+            "visit_count":      int(b.visit_count or 0),
+            "final_status":     b.final_status or "",
+        }
+
+    # Single-pass bucket classification
     buckets = defaultdict(list)
+    bene_bucket_map = {}
     for b in beneficiaries:
         cf = container_finals.get(b.container, "") if b.container else ""
         bkt = _bucket(config, frappe._dict(b), cf)
-        buckets[bkt].append({
-            "id":   b.name,
-            "name": b.beneficiary_name,
-            "street": b.street,
-        })
+        bene_bucket_map[b.name] = bkt
+        buckets[bkt].append(_fmt(b))
 
-    total = len(beneficiaries)
-    goal_count     = len(buckets.get("goal", []))
-    visited_count  = sum(1 for b in beneficiaries if int(b.visit_count or 0) > 0)
-    saturation_pct = round(goal_count  / total * 100, 1) if total else 0
+    total         = len(beneficiaries)
+    goal_count    = len(buckets.get("goal", []))
+    visited_count = sum(1 for b in beneficiaries if int(b.visit_count or 0) > 0)
+    saturation_pct = round(goal_count   / total * 100, 1) if total else 0
     coverage_pct   = round(visited_count / total * 100, 1) if total else 0
 
-    # Resolve bucket names to labels
+    # ── Pending actions ────────────────────────────────────────────────────────
+    required_slots = [s for s in config["slots"] if s["required_for_unlock"]]
+    slot_label_lkp = {s["slot_key"]: s["label"] for s in required_slots}
+    n_required     = len(required_slots)
+
+    def _needs_attention(b, slot):
+        val = getattr(b, slot["slot_key"], None) or "not_checked"
+        return val not in slot["terminal_values"]
+
+    pending_actions = []
+
+    # 1. Reach gap — active but never visited
+    reach_gap = [
+        _fmt(b) for b in beneficiaries
+        if int(b.visit_count or 0) == 0
+        and bene_bucket_map.get(b.name) not in ("goal", "negative")
+    ]
+    if reach_gap:
+        pending_actions.append({
+            "key": "reach_gap", "label": "Never Visited",
+            "color": "red", "count": len(reach_gap), "items": reach_gap,
+        })
+
+    # 2. SLA overdue — any slot past its SLA deadline
+    sla_overdue = [_fmt(b) for b in beneficiaries if _sla_overdue_days(config, b) > 0]
+    if sla_overdue:
+        pending_actions.append({
+            "key": "sla_overdue", "label": "SLA Overdue",
+            "color": "orange", "count": len(sla_overdue), "items": sla_overdue,
+        })
+
+    # 3. Per-slot-combination groups (docs_in_progress only)
+    combo_groups = defaultdict(list)
+    for b in beneficiaries:
+        if bene_bucket_map.get(b.name) == "docs_in_progress":
+            combo = tuple(
+                slot["slot_key"] for slot in required_slots
+                if _needs_attention(b, slot)
+            )
+            if combo:
+                combo_groups[combo].append(_fmt(b))
+
+    # Sort: all-docs groups first, then pairs, then singles
+    for combo, blist in sorted(combo_groups.items(), key=lambda x: -len(x[0])):
+        labels = [slot_label_lkp.get(k, k) for k in combo]
+        if len(labels) == n_required:
+            label = "Needs All Documents"
+        elif len(labels) == 1:
+            label = f"Needs {labels[0]} Only"
+        else:
+            label = "Needs " + " + ".join(labels)
+        color = "purple" if len(combo) > 1 else "blue"
+        pending_actions.append({
+            "key": "__".join(combo), "label": label,
+            "color": color, "count": len(blist), "items": blist,
+        })
+
+    # 4. Docs ready — all docs done, not yet applied
+    docs_ready_items = buckets.get("docs_ready", [])
+    if docs_ready_items:
+        pending_actions.append({
+            "key": "docs_ready_apply", "label": "Docs Ready — Apply Now!",
+            "color": "green", "count": len(docs_ready_items), "items": docs_ready_items,
+        })
+
+    slot_info = [{"key": s["slot_key"], "label": s["label"]} for s in config["slots"]]
     bucket_counts = {k: len(v) for k, v in buckets.items()}
 
     return {
@@ -710,5 +795,145 @@ def get_co_performance_v2(entitlement_code, co_id=None):
         "coverage_pct":      coverage_pct,
         "bucket_counts":     bucket_counts,
         "drilldown":         dict(buckets),
+        "pending_actions":   pending_actions,
+        "slot_info":         slot_info,
         "goal_label":        config["final_status_label"],
     }
+
+
+@frappe.whitelist()
+def get_beneficiary_detail(beneficiary_id):
+    """Full beneficiary profile for the detail screen (includes identity and address fields)."""
+    b = frappe.get_doc("Generic Beneficiary", beneficiary_id)
+
+    # Resolve household address via source_docname → Individual → Household
+    address = ""
+    if b.source_docname:
+        try:
+            hhid = frappe.db.get_value(
+                "Individual Profile-WRP", b.source_docname, "hhid"
+            )
+            if hhid:
+                address = frappe.db.get_value(
+                    "Household Profile-WRP", hhid, "address"
+                ) or ""
+        except Exception:
+            pass
+
+    return {
+        "name":               b.name,
+        "beneficiary_name":   b.beneficiary_name or "",
+        "street":             b.street or "",
+        "address":            address,
+        "date_of_birth":      str(b.date_of_birth) if b.date_of_birth else "",
+        "can_id":             b.can_id or "",
+        "login_phone":        b.login_phone or "",
+        "esm_login_id":       b.esm_login_id or "",
+        "ration_card_number": b.ration_card_number or "",
+        "notes":              b.notes or "",
+        "visit_count":        int(b.visit_count or 0),
+        "last_visited_at":    str(b.last_visited_at) if b.last_visited_at else "",
+        "doc1_status":        b.doc1_status or "",
+        "doc2_status":        b.doc2_status or "",
+        "doc3_status":        b.doc3_status or "",
+        "doc4_status":        b.doc4_status or "",
+        "final_status":       b.final_status or "",
+        "container":          b.container or "",
+        "entitlement":        b.entitlement or "",
+    }
+
+
+@frappe.whitelist()
+def get_entitlement_history(entitlement_code, co_id=None):
+    """
+    All visited beneficiaries for this entitlement/CO, sorted by last visit descending.
+    Used by the history screen.
+    """
+    if not co_id:
+        co_id = frappe.db.get_value(
+            "Staff details - WRP", {"mail_id": frappe.session.user}, "name"
+        )
+    if not co_id:
+        return {"history": []}
+
+    streets = frappe.get_all(
+        "Street List  - WRP", filters={"added_by_co": co_id}, pluck="name"
+    )
+    if not streets:
+        return {"history": []}
+
+    config = _load_config(entitlement_code)
+    final_label_map = {s["value"]: s["label"] for s in config["final_statuses"]}
+
+    rows = frappe.get_all(
+        "Generic Beneficiary",
+        filters={
+            "entitlement": entitlement_code,
+            "street":      ["in", streets],
+            "visit_count": [">", 0],
+        },
+        fields=["name", "beneficiary_name", "street", "last_visited_at",
+                "visit_count", "final_status", "notes"],
+        order_by="last_visited_at desc",
+        limit=300,
+    )
+
+    return {
+        "history": [
+            {
+                "name":             b.name,
+                "beneficiary_name": b.beneficiary_name or "",
+                "street":           b.street or "",
+                "last_visited_at":  str(b.last_visited_at) if b.last_visited_at else "",
+                "visit_count":      int(b.visit_count or 0),
+                "final_status":     b.final_status or "",
+                "final_label":      final_label_map.get(b.final_status or "", ""),
+                "notes":            b.notes or "",
+            }
+            for b in rows
+        ]
+    }
+
+
+@frappe.whitelist()
+def get_beneficiary_attachments(beneficiary_id):
+    """Returns files attached to a Generic Beneficiary record."""
+    files = frappe.get_all(
+        "File",
+        filters={
+            "attached_to_doctype": "Generic Beneficiary",
+            "attached_to_name":    beneficiary_id,
+        },
+        fields=["name", "file_name", "file_url", "file_size", "creation"],
+        order_by="creation desc",
+    )
+    return {"attachments": [dict(f) for f in files]}
+
+
+@frappe.whitelist()
+def delete_beneficiary_attachment(file_doc_name):
+    """Deletes a File record (and the underlying file) from a Generic Beneficiary."""
+    frappe.delete_doc("File", file_doc_name, ignore_permissions=True)
+    return {"status": "ok"}
+
+
+@frappe.whitelist()
+def update_beneficiary_profile(
+    beneficiary_id,
+    login_phone=None,
+    can_id=None,
+    esm_login_id=None,
+    ration_card_number=None,
+):
+    """Update identity fields without incrementing visit count."""
+    b = frappe.get_doc("Generic Beneficiary", beneficiary_id)
+    if login_phone is not None:
+        b.login_phone = login_phone
+    if can_id is not None:
+        b.can_id = can_id
+    if esm_login_id is not None:
+        b.esm_login_id = esm_login_id
+    if ration_card_number is not None:
+        b.ration_card_number = ration_card_number
+    b.save(ignore_permissions=True)
+    return {"status": "ok"}

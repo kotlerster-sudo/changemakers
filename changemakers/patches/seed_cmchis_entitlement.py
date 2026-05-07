@@ -6,7 +6,7 @@ exist (Frappe does not insert nested child tables automatically).
 import frappe
 
 SLOT_STATUSES = {
-    "doc1": [
+    "doc1_status": [
         {"status_value": "missing",           "label": "Missing",                    "is_terminal": 0, "starts_sla": 0, "color": "grey",   "sort_order": 1},
         {"status_value": "external_needed",   "label": "External Aadhaar Needed",    "is_terminal": 0, "starts_sla": 0, "color": "orange", "sort_order": 2},
         {"status_value": "external_applied",  "label": "External Applied (ETA 15d)", "is_terminal": 0, "starts_sla": 1, "color": "orange", "sort_order": 3},
@@ -14,7 +14,7 @@ SLOT_STATUSES = {
         {"status_value": "correction_needed", "label": "Correction Needed",          "is_terminal": 0, "starts_sla": 0, "color": "red",    "sort_order": 5},
         {"status_value": "received",          "label": "Aadhaar Received",           "is_terminal": 1, "starts_sla": 0, "color": "green",  "sort_order": 6},
     ],
-    "doc2": [
+    "doc2_status": [
         {"status_value": "not_applied", "label": "Not Applied",          "is_terminal": 0, "starts_sla": 0, "color": "grey",   "sort_order": 1},
         {"status_value": "applied",     "label": "Applied (ETA 4d)",     "is_terminal": 0, "starts_sla": 1, "color": "orange", "sort_order": 2},
         {"status_value": "received",    "label": "Income Cert Received", "is_terminal": 1, "starts_sla": 0, "color": "green",  "sort_order": 3},
@@ -42,8 +42,8 @@ def execute():
             "unlock_rule":         "ALL_REQUIRED_TERMINAL",
             "goal_status_value":   "active",
             "doc_slots": [
-                {"slot_number": 1, "slot_key": "doc1", "label": "Aadhaar Card",        "sla_days": 15, "required_for_unlock": 1},
-                {"slot_number": 2, "slot_key": "doc2", "label": "Income Certificate",  "sla_days": 4,  "required_for_unlock": 1},
+                {"slot_number": 1, "slot_key": "doc1_status", "label": "Aadhaar Card",        "sla_days": 15, "required_for_unlock": 1},
+                {"slot_number": 2, "slot_key": "doc2_status", "label": "Income Certificate",  "sla_days": 4,  "required_for_unlock": 1},
             ],
             "final_statuses": [
                 {"status_value": "not_applied", "label": "Not Applied",             "is_goal": 0, "is_negative": 0, "requires_unlock": 0, "color": "grey",  "sort_order": 1},

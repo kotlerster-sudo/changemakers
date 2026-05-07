@@ -72,8 +72,13 @@ override_whitelisted_methods = {
     "changemakers.entitlement_api.get_entitlement_config":   "changemakers.entitlement_api.get_entitlement_config",
     "changemakers.entitlement_api.get_daily_workplan_v2":    "changemakers.entitlement_api.get_daily_workplan_v2",
     "changemakers.entitlement_api.save_beneficiary_status":  "changemakers.entitlement_api.save_beneficiary_status",
-    "changemakers.entitlement_api.get_co_performance_v2":    "changemakers.entitlement_api.get_co_performance_v2",
-    "changemakers.dashboard_api.get_dashboard_overview":     "changemakers.dashboard_api.get_dashboard_overview",
+    "changemakers.entitlement_api.get_co_performance_v2":      "changemakers.entitlement_api.get_co_performance_v2",
+    "changemakers.entitlement_api.get_beneficiary_detail":    "changemakers.entitlement_api.get_beneficiary_detail",
+    "changemakers.entitlement_api.get_entitlement_history":   "changemakers.entitlement_api.get_entitlement_history",
+    "changemakers.entitlement_api.update_beneficiary_profile":   "changemakers.entitlement_api.update_beneficiary_profile",
+    "changemakers.entitlement_api.get_beneficiary_attachments":  "changemakers.entitlement_api.get_beneficiary_attachments",
+    "changemakers.entitlement_api.delete_beneficiary_attachment": "changemakers.entitlement_api.delete_beneficiary_attachment",
+    "changemakers.dashboard_api.get_dashboard_overview":      "changemakers.dashboard_api.get_dashboard_overview",
     "changemakers.dashboard_api.get_drilldown":              "changemakers.dashboard_api.get_drilldown",
 }
 
