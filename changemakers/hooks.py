@@ -68,6 +68,7 @@ app_include_js = "/assets/changemakers/js/changemakers.js"
 
 # Generic Entitlement API — whitelisted for Flutter
 override_whitelisted_methods = {
+    "changemakers.entitlement_api.get_co_schemes":            "changemakers.entitlement_api.get_co_schemes",
     "changemakers.entitlement_api.get_entitlement_config":   "changemakers.entitlement_api.get_entitlement_config",
     "changemakers.entitlement_api.get_daily_workplan_v2":    "changemakers.entitlement_api.get_daily_workplan_v2",
     "changemakers.entitlement_api.save_beneficiary_status":  "changemakers.entitlement_api.save_beneficiary_status",

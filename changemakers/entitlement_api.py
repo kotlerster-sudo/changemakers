@@ -573,6 +573,54 @@ def _log_status(entitlement_code, beneficiary_id, container_id,
 
 
 @frappe.whitelist()
+def get_co_schemes():
+    """
+    Returns the list of schemes the current CO has beneficiaries for.
+    CMCHIS (E1) is included if the CO owns any streets.
+    Generic schemes (E2+) are included if the CO has assigned beneficiaries.
+    Flutter uses `type` to route: "legacy" → old CMCHIS flow, "generic" → new flow.
+    """
+    co = frappe.db.get_value(
+        "Staff details - WRP", {"mail_id": frappe.session.user}, "name"
+    )
+    if not co:
+        return {"schemes": []}
+
+    schemes = []
+
+    # CMCHIS — old system, always show if CO has streets
+    street_count = frappe.db.count("Street List  - WRP", {"added_by_co": co})
+    if street_count:
+        schemes.append({
+            "code":        "E1",
+            "name":        "CMCHIS",
+            "type":        "legacy",
+            "description": "Chief Minister's Comprehensive Health Insurance Scheme",
+        })
+
+    # Generic entitlements
+    active = frappe.get_all(
+        "Entitlement Config",
+        filters={"enabled": 1, "entitlement_code": ["!=", "E1"]},
+        fields=["entitlement_code", "entitlement_name"],
+    )
+    for e in active:
+        count = frappe.db.count(
+            "Generic Beneficiary",
+            {"entitlement": e.entitlement_code, "assigned_co": co},
+        )
+        if count:
+            schemes.append({
+                "code":  e.entitlement_code,
+                "name":  e.entitlement_name,
+                "type":  "generic",
+                "total": count,
+            })
+
+    return {"schemes": schemes}
+
+
+@frappe.whitelist()
 def get_co_performance_v2(entitlement_code, co_id=None):
     """
     Generic CO performance metrics for any entitlement.
