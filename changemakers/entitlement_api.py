@@ -24,6 +24,13 @@ def _load_config(entitlement_code):
 
     slots = []
     for slot in sorted(doc.doc_slots, key=lambda s: s.slot_number):
+        # Frappe does not load nested child tables automatically — fetch explicitly
+        slot_status_rows = frappe.get_all(
+            "Doc Slot Status",
+            filters={"parent": slot.name, "parenttype": "Entitlement Doc Slot"},
+            fields=["status_value", "label", "is_terminal", "starts_sla", "color", "sort_order"],
+            order_by="sort_order asc",
+        )
         statuses = [
             {
                 "value":       s.status_value,
@@ -33,7 +40,7 @@ def _load_config(entitlement_code):
                 "color":       s.color or "grey",
                 "sort_order":  s.sort_order or 0,
             }
-            for s in sorted(slot.statuses, key=lambda x: x.sort_order or 0)
+            for s in slot_status_rows
         ]
         slots.append({
             "slot_number":       slot.slot_number,
@@ -46,6 +53,12 @@ def _load_config(entitlement_code):
             "sla_start_values":  {s["value"] for s in statuses if s["starts_sla"]},
         })
 
+    final_status_rows = frappe.get_all(
+        "Entitlement Final Status",
+        filters={"parent": doc.name, "parenttype": "Entitlement Config"},
+        fields=["status_value", "label", "is_goal", "is_negative", "requires_unlock", "color", "sort_order"],
+        order_by="sort_order asc",
+    )
     final_statuses = [
         {
             "value":           s.status_value,
@@ -56,7 +69,7 @@ def _load_config(entitlement_code):
             "color":           s.color or "grey",
             "sort_order":      s.sort_order or 0,
         }
-        for s in sorted(doc.final_statuses, key=lambda x: x.sort_order or 0)
+        for s in final_status_rows
     ]
 
     return {
