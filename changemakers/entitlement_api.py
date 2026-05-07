@@ -406,6 +406,25 @@ def save_beneficiary_status(
             )
 
     if final_status is not None:
+        # Enforce requires_unlock: block saving if docs aren't complete
+        if final_status:
+            fs_meta = next(
+                (s for s in config["final_statuses"] if s["value"] == final_status),
+                None,
+            )
+            if fs_meta and fs_meta.get("requires_unlock"):
+                if not _is_unlocked(config, beneficiary):
+                    missing = [
+                        s["label"] for s in config["slots"]
+                        if s["required_for_unlock"]
+                        and (getattr(beneficiary, s["slot_key"], "") or "")
+                        not in s["terminal_values"]
+                    ]
+                    frappe.throw(
+                        f"Cannot set '{fs_meta['label']}' — complete these first: "
+                        + ", ".join(missing)
+                    )
+
         if config["final_status_at"] == "Household" and (container_id or beneficiary.container):
             cid = container_id or beneficiary.container
             container = frappe.get_doc("Generic Container", cid)
@@ -806,17 +825,23 @@ def get_beneficiary_detail(beneficiary_id):
     """Full beneficiary profile for the detail screen (includes identity and address fields)."""
     b = frappe.get_doc("Generic Beneficiary", beneficiary_id)
 
-    # Resolve household address via source_docname → Individual → Household
+    # Resolve address and registered phone via source_docname → Individual → Household
     address = ""
+    individual_phone = ""
     if b.source_docname:
         try:
-            hhid = frappe.db.get_value(
-                "Individual Profile-WRP", b.source_docname, "hhid"
+            ind = frappe.db.get_value(
+                "Individual Profile-WRP",
+                b.source_docname,
+                ["hhid", "contact_number", "phone"],
+                as_dict=True,
             )
-            if hhid:
-                address = frappe.db.get_value(
-                    "Household Profile-WRP", hhid, "address"
-                ) or ""
+            if ind:
+                individual_phone = ind.contact_number or ind.phone or ""
+                if ind.hhid:
+                    address = frappe.db.get_value(
+                        "Household Profile-WRP", ind.hhid, "address"
+                    ) or ""
         except Exception:
             pass
 
@@ -825,6 +850,7 @@ def get_beneficiary_detail(beneficiary_id):
         "beneficiary_name":   b.beneficiary_name or "",
         "street":             b.street or "",
         "address":            address,
+        "individual_phone":   individual_phone,
         "date_of_birth":      str(b.date_of_birth) if b.date_of_birth else "",
         "can_id":             b.can_id or "",
         "login_phone":        b.login_phone or "",
