@@ -21,6 +21,7 @@ BATCH_SIZE  = 200
 ACTIVE_STATUS = "Active- ஆக்டிவ்"
 
 
+@frappe.whitelist()
 def execute(dry_run=False):
     if not frappe.db.exists("Entitlement Config", ENTITLEMENT):
         frappe.logger().warning("populate_oap_beneficiaries: E2 not seeded — run after deploy")
