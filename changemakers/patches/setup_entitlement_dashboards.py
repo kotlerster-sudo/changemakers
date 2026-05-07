@@ -465,10 +465,16 @@ def _upsert_html_block(name, html, script, style, roles):
 
 
 def _upsert_workspace(name, title, roles, html_block_name, module="Frappe Changemakers"):
-    """Create or update a workspace with a single HTML block content item."""
+    """Create or update a workspace with a single HTML block content item.
+
+    Frappe needs BOTH the content JSON (EditorJS renderer) AND a
+    custom_blocks child-table row (page_data loader) to display a
+    Custom HTML Block in a workspace.
+    """
+    block_id = name.lower().replace(" ", "_") + "_block"
     content = json.dumps([
         {
-            "id": f"{name.lower().replace(' ', '_')}_block",
+            "id": block_id,
             "type": "custom-block",
             "data": {"custom_block_name": html_block_name, "col": 12},
         }
@@ -478,6 +484,7 @@ def _upsert_workspace(name, title, roles, html_block_name, module="Frappe Change
         doc = frappe.get_doc("Workspace", name)
         doc.title = title
         doc.label = title
+        doc.content = content
     else:
         doc = frappe.new_doc("Workspace")
         doc.name = name
@@ -492,6 +499,13 @@ def _upsert_workspace(name, title, roles, html_block_name, module="Frappe Change
     doc.set("roles", [])
     for role in roles:
         doc.append("roles", {"role": role})
+
+    # Populate custom_blocks child table — required for page_data loader
+    doc.set("custom_blocks", [])
+    doc.append("custom_blocks", {
+        "custom_block_name": html_block_name,
+        "label": title,
+    })
 
     if doc.is_new():
         doc.insert(ignore_permissions=True)
