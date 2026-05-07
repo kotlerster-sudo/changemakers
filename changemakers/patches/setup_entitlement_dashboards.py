@@ -476,9 +476,12 @@ def _upsert_workspace(name, title, roles, html_block_name, module="Frappe Change
 
     if frappe.db.exists("Workspace", name):
         doc = frappe.get_doc("Workspace", name)
+        doc.title = title
+        doc.label = title
     else:
         doc = frappe.new_doc("Workspace")
         doc.name = name
+        doc.title = title
         doc.label = title
         doc.module = module
         doc.is_standard = 0
