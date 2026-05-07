@@ -586,19 +586,24 @@ def get_co_schemes():
     if not co:
         return {"schemes": []}
 
+    # Street ownership is the single source of truth for all scheme assignments.
+    streets = frappe.get_all(
+        "Street List  - WRP", filters={"added_by_co": co}, pluck="name"
+    )
+    if not streets:
+        return {"schemes": []}
+
     schemes = []
 
-    # CMCHIS — old system, always show if CO has streets
-    street_count = frappe.db.count("Street List  - WRP", {"added_by_co": co})
-    if street_count:
-        schemes.append({
-            "code":        "E1",
-            "name":        "CMCHIS",
-            "type":        "legacy",
-            "description": "Chief Minister's Comprehensive Health Insurance Scheme",
-        })
+    # CMCHIS — old system; any CO with streets has CMCHIS households
+    schemes.append({
+        "code":        "E1",
+        "name":        "CMCHIS",
+        "type":        "legacy",
+        "description": "Chief Minister's Comprehensive Health Insurance Scheme",
+    })
 
-    # Generic entitlements
+    # Generic entitlements — show if CO's streets have beneficiaries for that scheme
     active = frappe.get_all(
         "Entitlement Config",
         filters={"enabled": 1, "entitlement_code": ["!=", "E1"]},
@@ -607,7 +612,7 @@ def get_co_schemes():
     for e in active:
         count = frappe.db.count(
             "Generic Beneficiary",
-            {"entitlement": e.entitlement_code, "assigned_co": co},
+            {"entitlement": e.entitlement_code, "street": ["in", streets]},
         )
         if count:
             schemes.append({
