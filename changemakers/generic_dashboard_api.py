@@ -302,9 +302,9 @@ def get_co_performance_table(entitlement_code, geography=None):
         rows = frappe.get_all(
             "Staff details - WRP",
             filters={"name": ["in", all_co_ids]},
-            fields=["name", "employee_name"],
+            fields=["name", "full_name"],
         )
-        co_names = {r.name: r.employee_name or r.name for r in rows}
+        co_names = {r.name: r.full_name or r.name for r in rows}
 
     result = []
     for co, total in co_total.items():
@@ -499,9 +499,9 @@ def get_update_rate_by_co(entitlement_code, days=30):
         rows = frappe.get_all(
             "Staff details - WRP",
             filters={"name": ["in", co_ids]},
-            fields=["name", "employee_name"],
+            fields=["name", "full_name"],
         )
-        co_names = {r.name: r.employee_name or r.name for r in rows}
+        co_names = {r.name: r.full_name or r.name for r in rows}
 
     result = []
     for row in co_visits:
