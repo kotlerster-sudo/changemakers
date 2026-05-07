@@ -1,0 +1,141 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-05-07 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "entitlement",
+  "beneficiary",
+  "beneficiary_name",
+  "container",
+  "co",
+  "escalation_date",
+  "visit_count",
+  "status",
+  "ac_notes",
+  "resolved_date"
+ ],
+ "fields": [
+  {
+   "fieldname": "entitlement",
+   "fieldtype": "Link",
+   "label": "Scheme",
+   "options": "Entitlement Config",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "beneficiary",
+   "fieldtype": "Link",
+   "label": "Beneficiary",
+   "options": "Generic Beneficiary",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "beneficiary_name",
+   "fieldtype": "Data",
+   "label": "Name",
+   "fetch_from": "beneficiary.beneficiary_name",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "container",
+   "fieldtype": "Data",
+   "label": "Street / Container",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "co",
+   "fieldtype": "Data",
+   "label": "CO"
+  },
+  {
+   "fieldname": "escalation_date",
+   "fieldtype": "Date",
+   "label": "Escalated On",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "visit_count",
+   "fieldtype": "Int",
+   "label": "Visits at Escalation"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Pending AC Review\nCleared – Will Apply\nBlocked – No Resolution",
+   "reqd": 1,
+   "in_list_view": 1,
+   "default": "Pending AC Review"
+  },
+  {
+   "fieldname": "ac_notes",
+   "fieldtype": "Small Text",
+   "label": "AC Notes"
+  },
+  {
+   "fieldname": "resolved_date",
+   "fieldtype": "Date",
+   "label": "Resolved On"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-05-07 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Changemakers",
+ "name": "Generic AC Review",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "select": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "WRP-AC",
+   "select": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "WRP-PM",
+   "select": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "WRP-MIS",
+   "select": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "WRP-HR",
+   "select": 1
+  }
+ ],
+ "sort_field": "escalation_date",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

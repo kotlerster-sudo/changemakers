@@ -19,6 +19,8 @@ after_migrate = [
     "changemakers.patches.seed_cmchis_entitlement.execute",
     "changemakers.patches.seed_oap_entitlement.execute",
     "changemakers.patches.add_oap_ineligible_statuses.execute",
+    "changemakers.patches.seed_entitlement_role_config.execute",
+    "changemakers.patches.setup_entitlement_dashboards.execute",
 ]
 
 fixtures = [
@@ -81,6 +83,14 @@ override_whitelisted_methods = {
     "changemakers.entitlement_api.delete_beneficiary_attachment": "changemakers.entitlement_api.delete_beneficiary_attachment",
     "changemakers.dashboard_api.get_dashboard_overview":      "changemakers.dashboard_api.get_dashboard_overview",
     "changemakers.dashboard_api.get_drilldown":              "changemakers.dashboard_api.get_drilldown",
+    "changemakers.generic_dashboard_api.resolve_user_access":        "changemakers.generic_dashboard_api.resolve_user_access",
+    "changemakers.generic_dashboard_api.get_dashboard_schemes":      "changemakers.generic_dashboard_api.get_dashboard_schemes",
+    "changemakers.generic_dashboard_api.get_programme_overview":     "changemakers.generic_dashboard_api.get_programme_overview",
+    "changemakers.generic_dashboard_api.get_co_performance_table":   "changemakers.generic_dashboard_api.get_co_performance_table",
+    "changemakers.generic_dashboard_api.get_sankey_data":            "changemakers.generic_dashboard_api.get_sankey_data",
+    "changemakers.generic_dashboard_api.get_ac_review_queue":        "changemakers.generic_dashboard_api.get_ac_review_queue",
+    "changemakers.generic_dashboard_api.update_ac_review":           "changemakers.generic_dashboard_api.update_ac_review",
+    "changemakers.generic_dashboard_api.get_update_rate_by_co":      "changemakers.generic_dashboard_api.get_update_rate_by_co",
 }
 
 website_route_rules = [

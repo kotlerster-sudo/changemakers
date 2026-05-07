@@ -240,12 +240,17 @@ def get_daily_workplan_v2(entitlement_code, co_id=None, date=None, force_refresh
             )
             container_finals = {r.name: r.final_status or "" for r in rows}
 
+    # Beneficiaries blocked from Pool 3 by a pending AC review
+    pending_ac_names = set(frappe.db.sql_list("""
+        SELECT beneficiary FROM `tabGeneric AC Review`
+        WHERE entitlement = %(e)s AND status = 'Pending AC Review'
+    """, {"e": entitlement_code}))
+
     # Classify into buckets
     pool1, pool2, pool3_sla, pool3_idle, pool4 = [], [], [], [], []
 
     today_dt = getdate(today)
     for b in beneficiaries:
-        b_dict = b  # already a dict from get_all
         cf = container_finals.get(b.container, "") if b.container else ""
         bucket = _bucket(config, frappe._dict(b), cf)
 
@@ -263,6 +268,9 @@ def get_daily_workplan_v2(entitlement_code, co_id=None, date=None, force_refresh
             if int(b.visit_count or 0) == 0:
                 pool4.append(entry)
         elif bucket in ("docs_in_progress", "applied_pending"):
+            # Skip Pool 3 if pending AC review — AC must clear/block first
+            if b.name in pending_ac_names:
+                continue
             # Check SLA overdue
             overdue_days = _sla_overdue_days(config, b)
             if overdue_days > 0:
@@ -449,7 +457,8 @@ def save_beneficiary_status(
     if notes is not None:
         beneficiary.notes = notes
 
-    beneficiary.visit_count = int(beneficiary.visit_count or 0) + 1
+    new_visit_count = int(beneficiary.visit_count or 0) + 1
+    beneficiary.visit_count = new_visit_count
     beneficiary.last_visited_at = now_datetime()
     beneficiary.save(ignore_permissions=True)
 
@@ -458,6 +467,17 @@ def save_beneficiary_status(
         frappe.cache().delete_value(
             f"generic_workplan:{entitlement_code}:{co_id}:{getdate(nowdate())}"
         )
+
+    # Auto-escalate to AC review at 3 visits if still in docs_in_progress
+    try:
+        cf = ""
+        if config["final_status_at"] == "Household" and beneficiary.container:
+            cf = frappe.db.get_value("Generic Container", beneficiary.container, "final_status") or ""
+        new_bucket = _bucket(config, beneficiary, cf)
+        from changemakers.generic_dashboard_api import maybe_escalate_for_ac_review
+        maybe_escalate_for_ac_review(entitlement_code, beneficiary_id, new_visit_count, new_bucket)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "save_beneficiary_status: ac_review escalation")
 
     return {"status": "ok", "beneficiary": beneficiary_id}
 
