@@ -18,6 +18,7 @@ after_migrate = [
     "changemakers.patches.set_wrp_report_roles_v2.execute",
     "changemakers.patches.seed_cmchis_entitlement.execute",
     "changemakers.patches.seed_oap_entitlement.execute",
+    "changemakers.patches.add_oap_ineligible_statuses.execute",
 ]
 
 fixtures = [

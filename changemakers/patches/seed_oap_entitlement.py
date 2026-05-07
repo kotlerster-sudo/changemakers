@@ -53,10 +53,12 @@ def execute():
                 {"slot_number": 3, "slot_key": "doc3_status", "label": "Bank Account",  "sla_days": 10, "required_for_unlock": 1},
             ],
             "final_statuses": [
-                {"status_value": "not_applied", "label": "Not Applied",              "is_goal": 0, "is_negative": 0, "requires_unlock": 0, "color": "grey",  "sort_order": 1},
-                {"status_value": "applied",     "label": "Applied on e-Sevai (30d)", "is_goal": 0, "is_negative": 0, "requires_unlock": 1, "color": "blue",  "sort_order": 2},
-                {"status_value": "active",      "label": "Pension Active",           "is_goal": 1, "is_negative": 0, "requires_unlock": 1, "color": "green", "sort_order": 3},
-                {"status_value": "rejected",    "label": "Application Rejected",     "is_goal": 0, "is_negative": 1, "requires_unlock": 0, "color": "red",   "sort_order": 4},
+                {"status_value": "not_applied",    "label": "Not Applied",                          "is_goal": 0, "is_negative": 0, "requires_unlock": 0, "color": "grey",  "sort_order": 1},
+                {"status_value": "applied",        "label": "Applied on e-Sevai (30d)",             "is_goal": 0, "is_negative": 0, "requires_unlock": 1, "color": "blue",  "sort_order": 2},
+                {"status_value": "active",         "label": "Pension Active",                       "is_goal": 1, "is_negative": 0, "requires_unlock": 1, "color": "green", "sort_order": 3},
+                {"status_value": "rejected",       "label": "Application Rejected",                 "is_goal": 0, "is_negative": 1, "requires_unlock": 0, "color": "red",   "sort_order": 4},
+                {"status_value": "other_pension",  "label": "Ineligible — Receiving Other Pension", "is_goal": 0, "is_negative": 1, "requires_unlock": 0, "color": "red",   "sort_order": 5},
+                {"status_value": "already_active", "label": "Already Receiving OAP",               "is_goal": 1, "is_negative": 0, "requires_unlock": 0, "color": "green", "sort_order": 6},
             ],
         }).insert(ignore_permissions=True)
 
