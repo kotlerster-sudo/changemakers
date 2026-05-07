@@ -6,7 +6,7 @@ All endpoints are geography/role-filtered via Entitlement Role Config.
 """
 
 import frappe
-from frappe.utils import getdate, nowdate, now_datetime, date_diff
+from frappe.utils import getdate, nowdate, now_datetime
 from collections import defaultdict
 
 
