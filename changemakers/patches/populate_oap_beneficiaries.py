@@ -91,6 +91,7 @@ def execute(dry_run=False):
         try:
             frappe.get_doc({
                 "doctype":          "Generic Beneficiary",
+                "naming_series":    "GB-.YYYY.-.#####",
                 "entitlement":      ENTITLEMENT,
                 "beneficiary_name": str(r.full_name or ""),
                 "date_of_birth":    r.dob,
