@@ -599,3 +599,80 @@ def maybe_escalate_for_ac_review(entitlement_code, beneficiary_id, visit_count, 
         "visit_count":    int(visit_count),
         "status":         "Pending AC Review",
     }).insert(ignore_permissions=True)
+
+
+# ── Bucket drilldown ──────────────────────────────────────────────────────────
+
+@frappe.whitelist()
+def get_bucket_drilldown(entitlement_code, bucket, co_id=None, geography=None):
+    """
+    Level 1 (co_id=None): per-CO count for a bucket, sorted by count desc.
+    Level 2 (co_id given): beneficiary list (up to 200) for that CO+bucket.
+    """
+    from changemakers.entitlement_api import _load_config, _bucket
+
+    config = _load_config(entitlement_code)
+    filters = {"entitlement": entitlement_code}
+    if co_id:
+        filters["assigned_co"] = co_id
+
+    beneficiaries = frappe.get_all(
+        "Generic Beneficiary",
+        filters=filters,
+        fields=[
+            "name", "beneficiary_name", "container", "street", "assigned_co",
+            "doc1_status", "doc2_status", "doc3_status", "doc4_status",
+            "final_status", "visit_count", "last_visited_at",
+        ],
+    )
+
+    container_finals = {}
+    if config["final_status_at"] == "Household":
+        cids = list({b.container for b in beneficiaries if b.container})
+        if cids:
+            rows = frappe.get_all(
+                "Generic Container",
+                filters={"name": ["in", cids]},
+                fields=["name", "final_status"],
+            )
+            container_finals = {r.name: r.final_status or "" for r in rows}
+
+    in_bucket = []
+    for b in beneficiaries:
+        cf = container_finals.get(b.container, "") if b.container else ""
+        if _bucket(config, frappe._dict(b), cf) == bucket:
+            in_bucket.append(b)
+
+    if co_id:
+        items = [
+            {
+                "name":             b.name,
+                "beneficiary_name": b.beneficiary_name or b.name,
+                "street":           b.street or "",
+                "visit_count":      int(b.visit_count or 0),
+                "last_visited_at":  str(b.last_visited_at) if b.last_visited_at else "",
+            }
+            for b in in_bucket[:200]
+        ]
+        return {"level": "beneficiaries", "bucket": bucket, "co_id": co_id, "items": items, "total": len(in_bucket)}
+
+    # Level 1: group by CO
+    by_co = defaultdict(int)
+    for b in in_bucket:
+        by_co[b.assigned_co or "unassigned"] += 1
+
+    co_ids = [c for c in by_co if c != "unassigned"]
+    co_names = {}
+    if co_ids:
+        rows = frappe.get_all(
+            "Staff details - WRP",
+            filters={"name": ["in", co_ids]},
+            fields=["name", "full_name"],
+        )
+        co_names = {r.name: r.full_name or r.name for r in rows}
+
+    items = [
+        {"co_id": co, "co_name": co_names.get(co, co), "count": cnt}
+        for co, cnt in sorted(by_co.items(), key=lambda x: -x[1])
+    ]
+    return {"level": "co_list", "bucket": bucket, "items": items, "total": len(in_bucket)}

@@ -91,6 +91,7 @@ override_whitelisted_methods = {
     "changemakers.generic_dashboard_api.get_ac_review_queue":        "changemakers.generic_dashboard_api.get_ac_review_queue",
     "changemakers.generic_dashboard_api.update_ac_review":           "changemakers.generic_dashboard_api.update_ac_review",
     "changemakers.generic_dashboard_api.get_update_rate_by_co":      "changemakers.generic_dashboard_api.get_update_rate_by_co",
+    "changemakers.generic_dashboard_api.get_bucket_drilldown":        "changemakers.generic_dashboard_api.get_bucket_drilldown",
 }
 
 website_route_rules = [
