@@ -71,7 +71,8 @@
   {"create": 1, "read": 1, "write": 1, "role": "Partner SMT"},
   {"create": 1, "read": 1, "write": 1, "role": "WRP-PM"},
   {"create": 1, "read": 1, "write": 1, "role": "WRP-MIS"},
-  {"create": 1, "read": 1, "write": 1, "role": "WRP-AC"}
+  {"create": 1, "read": 1, "write": 1, "role": "WRP-AC"},
+  {"read": 1, "write": 1, "role": "SMT(NGO)-Field Co-ordinator"}
  ],
  "search_fields": "beneficiary_name,container,street",
  "sort_field": "last_visited_at",
