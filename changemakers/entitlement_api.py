@@ -225,7 +225,7 @@ def get_daily_workplan_v2(entitlement_code, co_id=None, date=None, force_refresh
         fields=["name", "beneficiary_name", "container", "street",
                 "doc1_status", "doc2_status", "doc3_status", "doc4_status",
                 "final_status", "visit_count", "last_visited_at",
-                "login_phone", "can_id"],
+                "login_phone", "can_id", "source_docname"],
     )
 
     # Get container final statuses if needed
@@ -331,6 +331,7 @@ def get_daily_workplan_v2(entitlement_code, co_id=None, date=None, force_refresh
         "co_id":            co_id,
         "daily_plan":       plan,
         "total":            len(plan),
+        "co_streets":       sorted(streets),
         "pool_sizes": {
             "unvisited":      len(pool1),
             "docs_ready":     len(pool2),
@@ -848,6 +849,7 @@ def get_beneficiary_detail(beneficiary_id):
     # Resolve address and registered phone via source_docname → Individual → Household
     address = ""
     individual_phone = ""
+    hhid = ""
     if b.source_docname:
         try:
             ind = frappe.db.get_value(
@@ -858,6 +860,7 @@ def get_beneficiary_detail(beneficiary_id):
             )
             if ind:
                 individual_phone = ind.contact_number or ind.phone or ""
+                hhid = ind.hhid or ""
                 if ind.hhid:
                     address = frappe.db.get_value(
                         "Household Profile-WRP", ind.hhid, "address"
@@ -871,6 +874,8 @@ def get_beneficiary_detail(beneficiary_id):
         "street":             b.street or "",
         "address":            address,
         "individual_phone":   individual_phone,
+        "source_docname":     b.source_docname or "",
+        "hhid":               hhid,
         "date_of_birth":      str(b.date_of_birth) if b.date_of_birth else "",
         "can_id":             b.can_id or "",
         "login_phone":        b.login_phone or "",
