@@ -969,6 +969,25 @@ def delete_beneficiary_attachment(file_doc_name):
 
 
 @frappe.whitelist()
+def upload_beneficiary_file(beneficiary_id, file_name, file_data):
+    """Accepts a base64-encoded file and attaches it to a Generic Beneficiary.
+    Used by the Flutter app to avoid the CSRF requirement on Frappe's upload_file endpoint."""
+    import base64
+    raw = base64.b64decode(file_data)
+    file_doc = frappe.get_doc({
+        "doctype": "File",
+        "file_name": file_name,
+        "content": raw,
+        "is_private": 1,
+        "attached_to_doctype": "Generic Beneficiary",
+        "attached_to_name": beneficiary_id,
+    })
+    file_doc.save(ignore_permissions=True)
+    frappe.db.commit()
+    return {"file_url": file_doc.file_url, "file_name": file_doc.file_name}
+
+
+@frappe.whitelist()
 def update_beneficiary_profile(
     beneficiary_id,
     login_phone=None,
