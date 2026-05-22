@@ -110,7 +110,9 @@ def get_programme_overview(entitlement_code, geography=None):
     Returns pipeline bucket counts, goal %, coverage %, SLA summary,
     and update rate band distribution.
     """
-    from changemakers.entitlement_api import _load_config, _bucket, _sla_overdue_days
+    from changemakers.entitlement_api import (
+        _load_config, _bucket, _sla_overdue_days, _filter_active_beneficiaries,
+    )
 
     config = _load_config(entitlement_code)
     filters = {"entitlement": entitlement_code}
@@ -120,8 +122,10 @@ def get_programme_overview(entitlement_code, geography=None):
         filters=filters,
         fields=["name", "container", "street", "assigned_co",
                 "doc1_status", "doc2_status", "doc3_status", "doc4_status",
-                "final_status", "visit_count", "last_visited_at"],
+                "final_status", "visit_count", "last_visited_at",
+                "source_docname"],
     )
+    beneficiaries = _filter_active_beneficiaries(beneficiaries)
 
     container_finals = {}
     if config["final_status_at"] == "Household":
@@ -186,13 +190,18 @@ def _get_update_rate_bands_summary(entitlement_code):
     Update rate = productive visits (at least one status change) / total visits.
     Bands: <25 critical, 25-50 poor, 50-75 acceptable, >75 good.
     """
-    # Get all COs with beneficiaries for this scheme
-    co_rows = frappe.db.sql("""
-        SELECT assigned_co, SUM(visit_count) as total_visits
-        FROM `tabGeneric Beneficiary`
-        WHERE entitlement = %(e)s AND assigned_co IS NOT NULL AND assigned_co != ''
-        GROUP BY assigned_co
-    """, {"e": entitlement_code}, as_dict=True)
+    from changemakers.entitlement_api import ACTIVE_IND_JOIN, ACTIVE_IND_WHERE, IND_ACTIVE_STATUS
+
+    # Get all COs with beneficiaries for this scheme (exclude moved-out individuals)
+    co_rows = frappe.db.sql(f"""
+        SELECT gb.assigned_co AS assigned_co, SUM(gb.visit_count) as total_visits
+        FROM `tabGeneric Beneficiary` gb
+        {ACTIVE_IND_JOIN}
+        WHERE gb.entitlement = %(e)s
+          AND gb.assigned_co IS NOT NULL AND gb.assigned_co != ''
+          AND {ACTIVE_IND_WHERE}
+        GROUP BY gb.assigned_co
+    """, {"e": entitlement_code, "_ind_active_status": IND_ACTIVE_STATUS}, as_dict=True)
 
     if not co_rows:
         return {"critical": 0, "poor": 0, "acceptable": 0, "good": 0}
@@ -236,7 +245,9 @@ def get_co_performance_table(entitlement_code, geography=None):
     Per-CO performance table for Programme Manager / MIS workspace.
     Returns a list of COs with their key metrics and update rate band.
     """
-    from changemakers.entitlement_api import _load_config, _bucket, _sla_overdue_days
+    from changemakers.entitlement_api import (
+        _load_config, _bucket, _sla_overdue_days, _filter_active_beneficiaries,
+    )
 
     config = _load_config(entitlement_code)
 
@@ -246,8 +257,10 @@ def get_co_performance_table(entitlement_code, geography=None):
         filters={"entitlement": entitlement_code},
         fields=["name", "container", "street", "assigned_co",
                 "doc1_status", "doc2_status", "doc3_status", "doc4_status",
-                "final_status", "visit_count", "last_visited_at"],
+                "final_status", "visit_count", "last_visited_at",
+                "source_docname"],
     )
+    beneficiaries = _filter_active_beneficiaries(beneficiaries)
 
     container_finals = {}
     if config["final_status_at"] == "Household":
@@ -476,12 +489,17 @@ def get_update_rate_by_co(entitlement_code, days=30):
     Returns update rate per CO with band classification.
     Used for the bar chart in the Programme Dashboard.
     """
-    co_visits = frappe.db.sql("""
-        SELECT assigned_co, SUM(visit_count) as total_visits
-        FROM `tabGeneric Beneficiary`
-        WHERE entitlement = %(e)s AND assigned_co IS NOT NULL AND assigned_co != ''
-        GROUP BY assigned_co
-    """, {"e": entitlement_code}, as_dict=True)
+    from changemakers.entitlement_api import ACTIVE_IND_JOIN, ACTIVE_IND_WHERE, IND_ACTIVE_STATUS
+
+    co_visits = frappe.db.sql(f"""
+        SELECT gb.assigned_co AS assigned_co, SUM(gb.visit_count) as total_visits
+        FROM `tabGeneric Beneficiary` gb
+        {ACTIVE_IND_JOIN}
+        WHERE gb.entitlement = %(e)s
+          AND gb.assigned_co IS NOT NULL AND gb.assigned_co != ''
+          AND {ACTIVE_IND_WHERE}
+        GROUP BY gb.assigned_co
+    """, {"e": entitlement_code, "_ind_active_status": IND_ACTIVE_STATUS}, as_dict=True)
 
     co_changes = frappe.db.sql("""
         SELECT co, COUNT(*) as changes
@@ -609,7 +627,9 @@ def get_bucket_drilldown(entitlement_code, bucket, co_id=None, geography=None):
     Level 1 (co_id=None): per-CO count for a bucket, sorted by count desc.
     Level 2 (co_id given): beneficiary list (up to 200) for that CO+bucket.
     """
-    from changemakers.entitlement_api import _load_config, _bucket
+    from changemakers.entitlement_api import (
+        _load_config, _bucket, _filter_active_beneficiaries,
+    )
 
     config = _load_config(entitlement_code)
     filters = {"entitlement": entitlement_code}
@@ -623,8 +643,10 @@ def get_bucket_drilldown(entitlement_code, bucket, co_id=None, geography=None):
             "name", "beneficiary_name", "container", "street", "assigned_co",
             "doc1_status", "doc2_status", "doc3_status", "doc4_status",
             "final_status", "visit_count", "last_visited_at",
+            "source_docname",
         ],
     )
+    beneficiaries = _filter_active_beneficiaries(beneficiaries)
 
     container_finals = {}
     if config["final_status_at"] == "Household":

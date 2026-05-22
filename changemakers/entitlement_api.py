@@ -16,6 +16,48 @@ from frappe.utils import getdate, nowdate, now_datetime
 import json
 from collections import defaultdict
 
+# Individual Profile-WRP.status value indicating a person still resides at the address.
+# Anything else (e.g. moved out) means the linked Generic Beneficiary must be excluded
+# from OAP counts even though the record persists.
+IND_ACTIVE_STATUS = "Active- ஆக்டிவ்"
+
+
+def _get_active_individual_names():
+    """Set of all currently-Active Individual Profile-WRP names.
+    Cached on frappe.local per request to avoid repeated full scans across
+    multiple dashboard calls in the same HTTP cycle.
+    """
+    if not hasattr(frappe.local, "_active_ind_names"):
+        frappe.local._active_ind_names = set(frappe.db.sql_list(
+            "SELECT name FROM `tabIndividual Profile-WRP` WHERE status = %s",
+            IND_ACTIVE_STATUS,
+        ))
+    return frappe.local._active_ind_names
+
+
+def _filter_active_beneficiaries(beneficiaries):
+    """Drop beneficiaries whose source Individual Profile-WRP is no longer Active.
+    Records with no source_docname are kept (defensive: don't silently lose data)."""
+    active = _get_active_individual_names()
+    out = []
+    for b in beneficiaries:
+        src = b.get("source_docname") if isinstance(b, dict) else getattr(b, "source_docname", None)
+        if not src or src in active:
+            out.append(b)
+    return out
+
+
+# Reusable SQL fragment for excluding moved-out individuals from raw SQL queries
+# on Generic Beneficiary. Aliases: `gb` for Generic Beneficiary, `ip` for the join.
+ACTIVE_IND_JOIN = (
+    "LEFT JOIN `tabIndividual Profile-WRP` ip ON ip.name = gb.source_docname"
+)
+ACTIVE_IND_WHERE = (
+    "(gb.source_docname IS NULL OR gb.source_docname = '' "
+    "OR ip.status = %(_ind_active_status)s)"
+)
+
+
 # ── Config loader ─────────────────────────────────────────────────────────────
 
 def _load_config(entitlement_code):
@@ -227,6 +269,7 @@ def get_daily_workplan_v2(entitlement_code, co_id=None, date=None, force_refresh
                 "final_status", "visit_count", "last_visited_at",
                 "login_phone", "can_id", "source_docname"],
     )
+    beneficiaries = _filter_active_beneficiaries(beneficiaries)
 
     # Get container final statuses if needed
     container_finals = {}
@@ -458,8 +501,15 @@ def save_beneficiary_status(
     if notes is not None:
         beneficiary.notes = notes
 
-    new_visit_count = int(beneficiary.visit_count or 0) + 1
-    beneficiary.visit_count = new_visit_count
+    # Same-day dedupe: only increment visit_count if this is the first visit today.
+    # Multiple updates to the same beneficiary on the same day count as one visit.
+    today = getdate(nowdate())
+    last_visit_date = getdate(beneficiary.last_visited_at) if beneficiary.last_visited_at else None
+    if last_visit_date != today:
+        new_visit_count = int(beneficiary.visit_count or 0) + 1
+        beneficiary.visit_count = new_visit_count
+    else:
+        new_visit_count = int(beneficiary.visit_count or 0)
     beneficiary.last_visited_at = now_datetime()
     beneficiary.save(ignore_permissions=True)
 
@@ -717,8 +767,10 @@ def get_co_performance_v2(entitlement_code, co_id=None):
         filters={"entitlement": entitlement_code, "street": ["in", streets]},
         fields=["name", "beneficiary_name", "container", "street",
                 "doc1_status", "doc2_status", "doc3_status", "doc4_status",
-                "final_status", "visit_count", "last_visited_at"],
+                "final_status", "visit_count", "last_visited_at",
+                "source_docname"],
     )
+    beneficiaries = _filter_active_beneficiaries(beneficiaries)
 
     container_finals = {}
     if config["final_status_at"] == "Household":
@@ -924,10 +976,11 @@ def get_entitlement_history(entitlement_code, co_id=None):
             "visit_count": [">", 0],
         },
         fields=["name", "beneficiary_name", "street", "last_visited_at",
-                "visit_count", "final_status", "notes"],
+                "visit_count", "final_status", "notes", "source_docname"],
         order_by="last_visited_at desc",
         limit=300,
     )
+    rows = _filter_active_beneficiaries(rows)
 
     return {
         "history": [

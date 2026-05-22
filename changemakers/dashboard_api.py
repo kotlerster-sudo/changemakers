@@ -29,7 +29,16 @@ BASE_VALS = {"occupied": OCCUPIED, "going_ahead": GOING_AHEAD, "ind_active": IND
 # ── Scope ────────────────────────────────────────────────────────────────────
 
 def _scope(filters):
-    cond, vals = "", {}
+    # Only include streets whose settlement is selected for the programme.
+    # Excluding 'No' and 'Yes, but not for Phase 1' (NULL/empty also excluded).
+    # NOT-IN avoids breakage if 'Yes - Partially' uses en-dash vs hyphen.
+    cond = (
+        " AND sl.settlement_selection_status IS NOT NULL"
+        " AND sl.settlement_selection_status != ''"
+        " AND sl.settlement_selection_status NOT IN ("
+        "'No', 'Yes, but not for Phase 1')"
+    )
+    vals = {}
     if filters.get("implementing_org"):
         cond += " AND sl.implementing_org = %(implementing_org)s"
         vals["implementing_org"] = filters["implementing_org"]
@@ -836,7 +845,15 @@ def _dd_co_low_impact(sc, sv):
 
 def _trends_scope(filters):
     """Build scope cond+vals for Status Log queries, with user-org restriction."""
-    sc = ""
+    # Mirror _scope(): only include streets whose settlement is selected.
+    sc = (
+        " AND street_name IN ("
+        "SELECT name FROM `tabStreet List  - WRP` "
+        "WHERE settlement_selection_status IS NOT NULL "
+        "AND settlement_selection_status != '' "
+        "AND settlement_selection_status NOT IN ('No', 'Yes, but not for Phase 1')"
+        ")"
+    )
     sv = {}
     if filters.get("implementing_org"):
         sc += " AND implementing_org = %(org)s"
