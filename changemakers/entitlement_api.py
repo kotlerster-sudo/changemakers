@@ -26,11 +26,15 @@ def _get_active_individual_names():
     """Set of all currently-Active Individual Profile-WRP names.
     Cached on frappe.local per request to avoid repeated full scans across
     multiple dashboard calls in the same HTTP cycle.
+
+    NOTE: pass values as a tuple, NOT a bare string — Frappe iterates a
+    string into a tuple of characters for positional params, which silently
+    returns zero rows and drops every beneficiary downstream.
     """
     if not hasattr(frappe.local, "_active_ind_names"):
         frappe.local._active_ind_names = set(frappe.db.sql_list(
             "SELECT name FROM `tabIndividual Profile-WRP` WHERE status = %s",
-            IND_ACTIVE_STATUS,
+            (IND_ACTIVE_STATUS,),
         ))
     return frappe.local._active_ind_names
 
