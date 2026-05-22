@@ -23,9 +23,15 @@ IND_ACTIVE_STATUS = "Active- ஆக்டிவ்"
 
 
 def _get_active_individual_names():
-    """Set of all currently-Active Individual Profile-WRP names.
+    """Set of all currently-Active Individual Profile-WRP names, cast to str.
+
     Cached on frappe.local per request.
-    Uses frappe.get_all to avoid raw-SQL parameter quirks.
+
+    **str() cast is load-bearing.** Individual Profile-WRP uses numeric
+    autoincrement names, so frappe.get_all returns int values for `name`.
+    But `Generic Beneficiary.source_docname` is stored as a string, and
+    `"64175" in {546, 547, ...}` returns False. Without the cast every
+    beneficiary gets dropped from the workplan.
     """
     if not hasattr(frappe.local, "_active_ind_names"):
         rows = frappe.get_all(
@@ -33,7 +39,7 @@ def _get_active_individual_names():
             filters={"status": IND_ACTIVE_STATUS},
             pluck="name",
         )
-        frappe.local._active_ind_names = set(rows)
+        frappe.local._active_ind_names = {str(r) for r in rows}
     return frappe.local._active_ind_names
 
 
@@ -41,9 +47,7 @@ def _filter_active_beneficiaries(beneficiaries):
     """Drop beneficiaries whose source Individual Profile-WRP is no longer Active.
     Records with no source_docname are kept (defensive: don't silently lose data).
 
-    **Fails OPEN** if the active set is empty — a broken status match shouldn't
-    silently empty the workplan for every CO. Better to show stale records than
-    nothing.
+    Fails OPEN if the active set is empty.
     """
     active = _get_active_individual_names()
     if not active:
@@ -54,7 +58,7 @@ def _filter_active_beneficiaries(beneficiaries):
     out = []
     for b in beneficiaries:
         src = b.get("source_docname") if isinstance(b, dict) else getattr(b, "source_docname", None)
-        if not src or src in active:
+        if not src or str(src) in active:
             out.append(b)
     return out
 
