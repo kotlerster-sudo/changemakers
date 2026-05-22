@@ -24,31 +24,82 @@ IND_ACTIVE_STATUS = "Active- ஆக்டிவ்"
 
 def _get_active_individual_names():
     """Set of all currently-Active Individual Profile-WRP names.
-    Cached on frappe.local per request to avoid repeated full scans across
-    multiple dashboard calls in the same HTTP cycle.
-
-    NOTE: pass values as a tuple, NOT a bare string — Frappe iterates a
-    string into a tuple of characters for positional params, which silently
-    returns zero rows and drops every beneficiary downstream.
+    Cached on frappe.local per request.
+    Uses frappe.get_all to avoid raw-SQL parameter quirks.
     """
     if not hasattr(frappe.local, "_active_ind_names"):
-        frappe.local._active_ind_names = set(frappe.db.sql_list(
-            "SELECT name FROM `tabIndividual Profile-WRP` WHERE status = %s",
-            (IND_ACTIVE_STATUS,),
-        ))
+        rows = frappe.get_all(
+            "Individual Profile-WRP",
+            filters={"status": IND_ACTIVE_STATUS},
+            pluck="name",
+        )
+        frappe.local._active_ind_names = set(rows)
     return frappe.local._active_ind_names
 
 
 def _filter_active_beneficiaries(beneficiaries):
     """Drop beneficiaries whose source Individual Profile-WRP is no longer Active.
-    Records with no source_docname are kept (defensive: don't silently lose data)."""
+    Records with no source_docname are kept (defensive: don't silently lose data).
+
+    **Fails OPEN** if the active set is empty — a broken status match shouldn't
+    silently empty the workplan for every CO. Better to show stale records than
+    nothing.
+    """
     active = _get_active_individual_names()
+    if not active:
+        frappe.logger().warning(
+            "_filter_active_beneficiaries: active set empty — filter disabled"
+        )
+        return list(beneficiaries)
     out = []
     for b in beneficiaries:
         src = b.get("source_docname") if isinstance(b, dict) else getattr(b, "source_docname", None)
         if not src or src in active:
             out.append(b)
     return out
+
+
+@frappe.whitelist()
+def debug_active_individuals():
+    """Diagnostic endpoint for the moved-out filter. Returns:
+      - active_set_size: how many individuals the filter considers active
+      - status_distribution: actual status values + counts in DB
+      - sample_gb_source_docnames: 5 source_docnames from OAP beneficiaries
+      - whether those samples are in the active set
+      - the exact IND_ACTIVE_STATUS string the code is comparing against
+    Hit at: /api/method/changemakers.entitlement_api.debug_active_individuals
+    """
+    active = _get_active_individual_names()
+    statuses = frappe.db.sql(
+        "SELECT status, COUNT(*) AS cnt FROM `tabIndividual Profile-WRP` "
+        "GROUP BY status ORDER BY cnt DESC LIMIT 10",
+        as_dict=True,
+    )
+    sample_gb = frappe.get_all(
+        "Generic Beneficiary",
+        filters={"entitlement": "E2"},
+        fields=["name", "source_docname", "beneficiary_name"],
+        limit=5,
+    )
+    sample_with_match = [
+        {
+            "gb_name":            b.name,
+            "source_docname":     b.source_docname,
+            "is_in_active_set":   (b.source_docname or "") in active,
+            "individual_exists":  bool(frappe.db.exists("Individual Profile-WRP", b.source_docname)) if b.source_docname else False,
+            "individual_status":  frappe.db.get_value("Individual Profile-WRP", b.source_docname, "status") if b.source_docname else None,
+        }
+        for b in sample_gb
+    ]
+    return {
+        "IND_ACTIVE_STATUS":     IND_ACTIVE_STATUS,
+        "IND_ACTIVE_STATUS_repr": repr(IND_ACTIVE_STATUS),
+        "IND_ACTIVE_STATUS_hex":  IND_ACTIVE_STATUS.encode().hex(),
+        "active_set_size":       len(active),
+        "active_sample":         list(active)[:5],
+        "status_distribution":   [dict(s) for s in statuses],
+        "sample_oap_beneficiaries": sample_with_match,
+    }
 
 
 # Reusable SQL fragment for excluding moved-out individuals from raw SQL queries
