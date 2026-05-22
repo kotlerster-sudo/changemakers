@@ -463,6 +463,66 @@ def get_ac_review_queue(entitlement_code, status_filter="Pending AC Review"):
 
 
 @frappe.whitelist()
+def export_ac_reviews_xlsx(entitlement_code, status_filter=None):
+    """
+    Download the AC review queue as an .xlsx file.
+    MIS coordinators use this to reconcile against external trackers.
+    status_filter is optional — empty means all statuses.
+    """
+    from frappe.utils.xlsxutils import make_xlsx
+
+    filters = {"entitlement": entitlement_code}
+    if status_filter:
+        filters["status"] = status_filter
+
+    rows = frappe.get_all(
+        "Generic AC Review",
+        filters=filters,
+        fields=["name", "beneficiary", "beneficiary_name", "container",
+                "co", "escalation_date", "visit_count", "status",
+                "ac_notes", "resolved_date"],
+        order_by="escalation_date asc",
+    )
+
+    # Resolve CO display names
+    co_ids = list({r.co for r in rows if r.co})
+    co_names = {}
+    if co_ids:
+        for r in frappe.get_all(
+            "Staff details - WRP",
+            filters={"name": ["in", co_ids]},
+            fields=["name", "full_name"],
+        ):
+            co_names[r.name] = r.full_name or r.name
+
+    header = [
+        "Review ID", "Beneficiary ID", "Beneficiary Name", "Container",
+        "CO ID", "CO Name", "Escalation Date", "Visit Count",
+        "Status", "AC Notes", "Resolved Date",
+    ]
+    data = [header]
+    for r in rows:
+        data.append([
+            r.name or "",
+            r.beneficiary or "",
+            r.beneficiary_name or "",
+            r.container or "",
+            r.co or "",
+            co_names.get(r.co, ""),
+            str(r.escalation_date) if r.escalation_date else "",
+            int(r.visit_count or 0),
+            r.status or "",
+            r.ac_notes or "",
+            str(r.resolved_date) if r.resolved_date else "",
+        ])
+
+    xlsx_data = make_xlsx(data, "AC Reviews")
+    frappe.response["filename"] = f"ac_reviews_{entitlement_code}_{frappe.utils.nowdate()}.xlsx"
+    frappe.response["filecontent"] = xlsx_data.getvalue()
+    frappe.response["type"] = "binary"
+
+
+@frappe.whitelist()
 def update_ac_review(review_id, status, ac_notes=None):
     """
     Update a Generic AC Review record (AC clears or blocks a beneficiary).
