@@ -525,10 +525,21 @@ def export_ac_reviews_xlsx(entitlement_code, status_filter=None):
 @frappe.whitelist()
 def update_ac_review(review_id, status, ac_notes=None):
     """
-    Update a Generic AC Review record (AC clears or blocks a beneficiary).
-    Allowed statuses: 'Cleared – Will Apply', 'Blocked – No Resolution'
+    Update a Generic AC Review record (AC clears, blocks, closes, or reopens).
+    Allowed statuses:
+      - 'Cleared – Will Apply'        — docs in hand, CO to apply
+      - 'Blocked – No Resolution'     — needs follow-up (still actionable)
+      - 'Closed – Unreachable'        — case can't progress; also sets the
+                                        beneficiary's final_status to 'closed'
+      - 'Pending AC Review'           — reopen (used on previously Blocked
+                                        items the AC wants to revisit)
     """
-    allowed = {"Cleared – Will Apply", "Blocked – No Resolution", "Pending AC Review"}
+    allowed = {
+        "Cleared – Will Apply",
+        "Blocked – No Resolution",
+        "Closed – Unreachable",
+        "Pending AC Review",
+    }
     if status not in allowed:
         frappe.throw(f"Invalid status: {status}")
 
@@ -536,7 +547,48 @@ def update_ac_review(review_id, status, ac_notes=None):
     doc.status = status
     if ac_notes:
         doc.ac_notes = ac_notes
+
+    if status == "Pending AC Review":
+        # Reopen: clear resolution timestamp so AC can take fresh action
+        doc.resolved_date = None
+    else:
+        doc.resolved_date = nowdate()
+
     doc.save(ignore_permissions=True)
+
+    # When AC marks a review as Closed, mirror that on the Generic Beneficiary
+    # so dashboards/workplans correctly reflect the case as closed-negative.
+    if status == "Closed – Unreachable" and doc.beneficiary:
+        try:
+            beneficiary = frappe.get_doc("Generic Beneficiary", doc.beneficiary)
+            if (beneficiary.final_status or "") != "closed":
+                old_final = beneficiary.final_status or ""
+                beneficiary.final_status = "closed"
+                reason = (ac_notes or "").strip()
+                stamp = f"[AC closed {nowdate()}]"
+                if reason:
+                    stamp += f" {reason}"
+                beneficiary.notes = ((beneficiary.notes or "") + "\n" + stamp).strip()
+                beneficiary.save(ignore_permissions=True)
+
+                # Log the transition so the Daily Update Report picks it up
+                try:
+                    from changemakers.entitlement_api import _load_config, _log_status
+                    config = _load_config(doc.entitlement)
+                    _log_status(
+                        doc.entitlement, doc.beneficiary, beneficiary.container,
+                        "final_status", old_final, "closed", config,
+                    )
+                except Exception:
+                    frappe.log_error(
+                        frappe.get_traceback(),
+                        "update_ac_review: status log write failed",
+                    )
+        except Exception:
+            frappe.log_error(
+                frappe.get_traceback(),
+                "update_ac_review: beneficiary close-out failed",
+            )
 
     return {"status": "ok", "review_id": review_id, "new_status": status}
 

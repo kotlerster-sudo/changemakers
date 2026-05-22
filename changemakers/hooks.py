@@ -19,6 +19,7 @@ after_migrate = [
     "changemakers.patches.seed_cmchis_entitlement.execute",
     "changemakers.patches.seed_oap_entitlement.execute",
     "changemakers.patches.add_oap_ineligible_statuses.execute",
+    "changemakers.patches.add_closed_final_status.execute",
     "changemakers.patches.seed_entitlement_role_config.execute",
     "changemakers.patches.setup_entitlement_dashboards.execute",
 ]
