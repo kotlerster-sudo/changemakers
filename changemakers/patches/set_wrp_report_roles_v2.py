@@ -10,6 +10,7 @@ def execute():
         "CMCHIS Delay Analysis",
         "WRP Status Transitions",
         "WRP Saturation Progress",
+        "Entitlement Daily Update Report",
     ]
     roles = [
         "System Manager",
@@ -50,6 +51,9 @@ def execute():
     # ── Ensure WRP Saturation Progress shortcut is in WRP Performance workspace ──
     _ensure_saturation_shortcut()
 
+    # ── Ensure Entitlement Daily Update Report shortcut is on OAP MIS Dashboard ──
+    _ensure_oap_daily_update_shortcut()
+
 
 def _ensure_saturation_shortcut():
     report_name = "WRP Saturation Progress"
@@ -83,6 +87,56 @@ def _ensure_saturation_shortcut():
             {"id": "wrp_sat_h", "type": "paragraph",
              "data": {"text": "Baseline & Progress", "col": 12}},
             {"id": "wrp_sat_s", "type": "shortcut",
+             "data": {"shortcut_name": report_name, "col": 4}},
+        ]
+        doc.content = json.dumps(content)
+        content_changed = True
+
+    if shortcuts_changed or content_changed:
+        _old = frappe.flags.ignore_links
+        frappe.flags.ignore_links = True
+        try:
+            doc.save(ignore_permissions=True)
+        finally:
+            frappe.flags.ignore_links = _old
+
+    frappe.db.commit()
+
+
+def _ensure_oap_daily_update_shortcut():
+    report_name   = "Entitlement Daily Update Report"
+    workspace_name = "OAP MIS Dashboard"
+
+    if not frappe.db.exists("Workspace", workspace_name):
+        return
+    if not frappe.db.exists("Report", report_name):
+        return  # fixtures not yet synced — next migrate will catch it
+
+    doc = frappe.get_doc("Workspace", workspace_name)
+
+    existing_links = {s.link_to for s in doc.shortcuts}
+    shortcuts_changed = False
+    if report_name not in existing_links:
+        doc.append("shortcuts", {
+            "label":   "Daily Update Report",
+            "link_to": report_name,
+            "type":    "Report",
+            "color":   "Blue",
+        })
+        shortcuts_changed = True
+
+    content = json.loads(doc.content or "[]")
+    existing_shortcut_names = {
+        item.get("data", {}).get("shortcut_name")
+        for item in content
+        if item.get("type") == "shortcut"
+    }
+    content_changed = False
+    if report_name not in existing_shortcut_names:
+        content += [
+            {"id": "oap_daily_h", "type": "paragraph",
+             "data": {"text": "Daily Tracking", "col": 12}},
+            {"id": "oap_daily_s", "type": "shortcut",
              "data": {"shortcut_name": report_name, "col": 4}},
         ]
         doc.content = json.dumps(content)
