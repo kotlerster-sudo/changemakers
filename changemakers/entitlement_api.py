@@ -1001,8 +1001,42 @@ def get_entitlement_history(entitlement_code, co_id=None):
 
 @frappe.whitelist()
 def get_beneficiary_attachments(beneficiary_id):
-    """Returns files attached to a Generic Beneficiary record."""
-    files = frappe.get_all(
+    """Returns the unified document vault for this beneficiary's individual,
+    plus any legacy attachments still pinned directly to the Generic Beneficiary.
+
+    A single CO should never need to re-collect a document already gathered
+    for another scheme — Aadhaar, ration card, bank statement, etc. all live
+    on Individual Profile-WRP.document_vault and are shared across CMCHIS,
+    OAP, and any future entitlements.
+    """
+    individual_id = frappe.db.get_value(
+        "Generic Beneficiary", beneficiary_id, "source_docname"
+    )
+
+    out = []
+
+    if individual_id and frappe.db.exists("Individual Profile-WRP", individual_id):
+        vault_rows = frappe.get_all(
+            "Document Vault Item",
+            filters={
+                "parent": individual_id,
+                "parenttype": "Individual Profile-WRP",
+            },
+            fields=["name", "category", "file_name", "file_path", "creation"],
+            order_by="creation desc",
+        )
+        for v in vault_rows:
+            out.append({
+                "name":      v.name,
+                "file_name": v.file_name or "",
+                "file_url":  v.file_path or "",
+                "category":  v.category or "",
+                "creation":  str(v.creation) if v.creation else "",
+                "source":    "vault",
+            })
+
+    # Legacy attachments uploaded before the vault unification
+    legacy = frappe.get_all(
         "File",
         filters={
             "attached_to_doctype": "Generic Beneficiary",
@@ -1011,22 +1045,93 @@ def get_beneficiary_attachments(beneficiary_id):
         fields=["name", "file_name", "file_url", "file_size", "creation"],
         order_by="creation desc",
     )
-    return {"attachments": [dict(f) for f in files]}
+    for f in legacy:
+        out.append({
+            "name":      f.name,
+            "file_name": f.file_name or "",
+            "file_url":  f.file_url or "",
+            "category":  "",
+            "creation":  str(f.creation) if f.creation else "",
+            "source":    "legacy",
+        })
+
+    return {
+        "attachments": out,
+        "individual":  individual_id or "",
+    }
 
 
 @frappe.whitelist()
-def delete_beneficiary_attachment(file_doc_name):
-    """Deletes a File record (and the underlying file) from a Generic Beneficiary."""
+def delete_beneficiary_attachment(file_doc_name, beneficiary_id=None, source="legacy"):
+    """Delete an attachment.
+    source='vault' removes the Document Vault Item from Individual Profile-WRP;
+    source='legacy' (default for backward compat) deletes the File row directly.
+    """
+    if source == "vault" and beneficiary_id:
+        individual_id = frappe.db.get_value(
+            "Generic Beneficiary", beneficiary_id, "source_docname"
+        )
+        if not individual_id:
+            frappe.throw("Cannot resolve individual for vault delete")
+        ind = frappe.get_doc("Individual Profile-WRP", individual_id)
+        before = len(ind.document_vault or [])
+        ind.document_vault = [
+            v for v in (ind.document_vault or []) if v.name != file_doc_name
+        ]
+        if len(ind.document_vault) == before:
+            frappe.throw("Vault item not found")
+        ind.save(ignore_permissions=True)
+        return {"status": "ok", "source": "vault"}
+
     frappe.delete_doc("File", file_doc_name, ignore_permissions=True)
-    return {"status": "ok"}
+    return {"status": "ok", "source": "legacy"}
 
 
 @frappe.whitelist()
-def upload_beneficiary_file(beneficiary_id, file_name, file_data):
-    """Accepts a base64-encoded file and attaches it to a Generic Beneficiary.
-    Used by the Flutter app to avoid the CSRF requirement on Frappe's upload_file endpoint."""
+def upload_beneficiary_file(beneficiary_id, file_name, file_data, doc_category=None):
+    """Accepts a base64-encoded file and stores it in the unified document vault
+    on Individual Profile-WRP (shared across CMCHIS, OAP, and future schemes).
+
+    Falls back to attaching directly to the Generic Beneficiary if no source
+    individual is set (legacy / orphan beneficiaries).
+
+    doc_category: optional label (e.g. 'Aadhaar', 'Ration Card', 'Bank Statement').
+    """
     import base64
     raw = base64.b64decode(file_data)
+
+    individual_id = frappe.db.get_value(
+        "Generic Beneficiary", beneficiary_id, "source_docname"
+    )
+
+    if individual_id and frappe.db.exists("Individual Profile-WRP", individual_id):
+        # Unified path: file attaches to the individual, vault entry tags the category
+        file_doc = frappe.get_doc({
+            "doctype": "File",
+            "file_name": file_name,
+            "content": raw,
+            "is_private": 1,
+            "attached_to_doctype": "Individual Profile-WRP",
+            "attached_to_name":    individual_id,
+        })
+        file_doc.save(ignore_permissions=True)
+
+        ind = frappe.get_doc("Individual Profile-WRP", individual_id)
+        ind.append("document_vault", {
+            "category":  doc_category or "Uncategorized",
+            "file_name": file_name,
+            "file_path": file_doc.file_url,
+        })
+        ind.save(ignore_permissions=True)
+        frappe.db.commit()
+        return {
+            "file_url":   file_doc.file_url,
+            "file_name":  file_doc.file_name,
+            "individual": individual_id,
+            "source":     "vault",
+        }
+
+    # Legacy fallback: no source individual → keep on Generic Beneficiary
     file_doc = frappe.get_doc({
         "doctype": "File",
         "file_name": file_name,
@@ -1037,7 +1142,11 @@ def upload_beneficiary_file(beneficiary_id, file_name, file_data):
     })
     file_doc.save(ignore_permissions=True)
     frappe.db.commit()
-    return {"file_url": file_doc.file_url, "file_name": file_doc.file_name}
+    return {
+        "file_url":  file_doc.file_url,
+        "file_name": file_doc.file_name,
+        "source":    "legacy",
+    }
 
 
 @frappe.whitelist()
