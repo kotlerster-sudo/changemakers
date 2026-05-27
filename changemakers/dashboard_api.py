@@ -1134,6 +1134,7 @@ def get_ac_review_list(ac=None, status="Pending AC Review", street=None, interve
             DATEDIFF(%(today)s, escalation_date) AS days_pending,
             status,
             ac_notes,
+            followup_notes,
             resolved_date,
             intervention_unit,
             implementing_org
@@ -1183,4 +1184,32 @@ def resolve_ac_review(name, status, ac_notes=""):
     doc.save(ignore_permissions=True)
     frappe.db.commit()
     return {"ok": True}
+
+
+@frappe.whitelist()
+def append_ac_followup_note(name, note):
+    """
+    Append a timestamped follow-up note to a resolved WRP AC Review row.
+
+    The original `ac_notes` (captured at Clear/Block) is historical and untouched.
+    Each call appends a new entry to `followup_notes` so the full follow-up trail
+    is preserved.
+    """
+    note = (note or "").strip()
+    if not note:
+        frappe.throw("Note cannot be empty.")
+
+    doc = frappe.get_doc("WRP AC Review", name)
+    if doc.status not in ("Cleared – Will Apply", "Blocked – No Resolution"):
+        frappe.throw("Follow-up notes can only be added after the household is Cleared or Blocked.")
+
+    user = frappe.session.user
+    full_name = frappe.db.get_value("User", user, "full_name") or user
+    stamp = frappe.utils.now_datetime().strftime("%Y-%m-%d %H:%M")
+    entry = f"[{stamp}] {full_name}: {note}"
+
+    doc.followup_notes = f"{doc.followup_notes}\n\n{entry}" if doc.followup_notes else entry
+    doc.save(ignore_permissions=True)
+    frappe.db.commit()
+    return {"ok": True, "followup_notes": doc.followup_notes}
 

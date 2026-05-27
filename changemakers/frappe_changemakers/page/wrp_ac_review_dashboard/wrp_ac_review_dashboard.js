@@ -73,6 +73,32 @@ frappe.pages["wrp-ac-review-dashboard"].on_page_load = function (wrapper) {
 			margin-bottom: 8px;
 		}
 		.ac-mobile-card-actions { display: flex; gap: 8px; margin-top: 8px; }
+		.ac-notes-block { margin-top: 8px; font-size: 12px; line-height: 1.4; }
+		.ac-notes-block .ac-note-original {
+			background: #fff8e1;
+			border-left: 3px solid #f1c40f;
+			padding: 6px 8px;
+			border-radius: 3px;
+			color: #5d4e00;
+			white-space: pre-wrap;
+		}
+		.ac-notes-block .ac-note-followups {
+			margin-top: 6px;
+			background: #f4f9ff;
+			border-left: 3px solid #2980b9;
+			padding: 6px 8px;
+			border-radius: 3px;
+			color: #1a3d5c;
+			white-space: pre-wrap;
+		}
+		.ac-notes-block .ac-note-label {
+			text-transform: uppercase;
+			font-size: 10px;
+			font-weight: 700;
+			letter-spacing: 0.5px;
+			opacity: 0.7;
+			margin-bottom: 2px;
+		}
 	</style>
 	<div style="padding:12px 16px">
 		<div id="ac-review-summary" style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap"></div>
@@ -211,15 +237,19 @@ frappe.pages["wrp-ac-review-dashboard"].on_page_load = function (wrapper) {
 				<th style="padding:8px 12px">Escalated On</th>
 				<th style="padding:8px 12px">Days</th>
 				<th style="padding:8px 12px">Status</th>
-				${isPending ? `<th style="padding:8px 12px">Action</th>` : ""}
+				<th style="padding:8px 12px;min-width:240px">Notes</th>
+				<th style="padding:8px 12px">Action</th>
 			</tr>
 		</thead>`;
 
 		const bodyRows = rows.map((r, i) => {
 			const bg       = i % 2 === 0 ? "#fff" : "#fafafa";
 			const dayBadge = dayBadgeHtml(r.days_pending);
-			const actions  = isPending ? actionCellHtml(r.name) : "";
-			return `<tr style="background:${bg};font-size:13px">
+			const resolved = r.status === "Cleared – Will Apply" || r.status === "Blocked – No Resolution";
+			const actions  = isPending
+				? actionCellHtml(r.name)
+				: (resolved ? followupActionCellHtml(r.name) : `<td style="padding:8px 12px"></td>`);
+			return `<tr style="background:${bg};font-size:13px;vertical-align:top">
 				<td style="padding:8px 12px;font-family:monospace">${r.household}</td>
 				<td style="padding:8px 12px">${r.respondent || "—"}</td>
 				<td style="padding:8px 12px">${r.street || "—"}</td>
@@ -229,6 +259,7 @@ frappe.pages["wrp-ac-review-dashboard"].on_page_load = function (wrapper) {
 				<td style="padding:8px 12px">${r.escalation_date}</td>
 				<td style="padding:8px 12px;text-align:center">${dayBadge}</td>
 				<td style="padding:8px 12px">${statusBadgeHtml(r.status)}</td>
+				<td style="padding:8px 12px">${notesBlockHtml(r)}</td>
 				${actions}
 			</tr>`;
 		}).join("");
@@ -242,14 +273,20 @@ frappe.pages["wrp-ac-review-dashboard"].on_page_load = function (wrapper) {
 		const cards = rows.map(r => {
 			const days = r.days_pending || 0;
 			const dayColor = days > 14 ? "#e74c3c" : days > 7 ? "#e67e22" : "#27ae60";
-			const actionBtns = isPending
-				? `<div class="ac-mobile-card-actions">
+			const resolved = r.status === "Cleared – Will Apply" || r.status === "Blocked – No Resolution";
+			let actionBtns = "";
+			if (isPending) {
+				actionBtns = `<div class="ac-mobile-card-actions">
 					<button class="btn btn-sm btn-success ac-action" data-name="${r.name}"
 						data-status="Cleared – Will Apply" style="flex:1">Cleared</button>
 					<button class="btn btn-sm btn-danger ac-action" data-name="${r.name}"
 						data-status="Blocked – No Resolution" style="flex:1">Blocked</button>
-				   </div>`
-				: "";
+				   </div>`;
+			} else if (resolved) {
+				actionBtns = `<div class="ac-mobile-card-actions">
+					<button class="btn btn-sm btn-default ac-followup" data-name="${r.name}" style="flex:1">+ Add Follow-up Note</button>
+				   </div>`;
+			}
 			return `<div class="ac-mobile-card">
 				<div class="ac-mobile-card-top">
 					<span style="font-family:monospace;font-size:13px;font-weight:600">${r.household}</span>
@@ -257,6 +294,7 @@ frappe.pages["wrp-ac-review-dashboard"].on_page_load = function (wrapper) {
 				</div>
 				<div style="font-size:14px;font-weight:500;margin-bottom:2px">${r.respondent || "—"}</div>
 				<div class="ac-mobile-card-sub">${r.street || "—"} &nbsp;·&nbsp; CO: ${r.co || "—"} &nbsp;·&nbsp; ${r.visit_count} visits</div>
+				${notesBlockHtml(r)}
 				${actionBtns}
 			</div>`;
 		}).join("");
@@ -283,6 +321,57 @@ frappe.pages["wrp-ac-review-dashboard"].on_page_load = function (wrapper) {
 				`Mark as: ${status}`, "Confirm"
 			);
 		});
+
+		$(".ac-followup").on("click", function () {
+			const name = $(this).data("name");
+			frappe.prompt(
+				{ fieldtype: "Small Text", fieldname: "note", label: "Follow-up note", reqd: 1 },
+				({ note }) => {
+					frappe.call({
+						method: "changemakers.dashboard_api.append_ac_followup_note",
+						args: { name, note },
+						callback() {
+							frappe.show_alert({ message: "Note added", indicator: "green" });
+							render();
+						},
+					});
+				},
+				"Add follow-up note", "Save"
+			);
+		});
+	}
+
+	function escapeHtml(s) {
+		return String(s || "")
+			.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+			.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+	}
+
+	function notesBlockHtml(r) {
+		const original = (r.ac_notes || "").trim();
+		const followups = (r.followup_notes || "").trim();
+		if (!original && !followups) return `<span style="color:#bbb;font-size:12px">—</span>`;
+		let html = `<div class="ac-notes-block">`;
+		if (original) {
+			html += `<div class="ac-note-original">
+				<div class="ac-note-label">Original (at ${escapeHtml(r.resolved_date || "resolution")})</div>
+				${escapeHtml(original)}
+			</div>`;
+		}
+		if (followups) {
+			html += `<div class="ac-note-followups">
+				<div class="ac-note-label">Follow-ups</div>
+				${escapeHtml(followups)}
+			</div>`;
+		}
+		html += `</div>`;
+		return html;
+	}
+
+	function followupActionCellHtml(name) {
+		return `<td style="padding:8px 12px;white-space:nowrap">
+			<button class="btn btn-xs btn-default ac-followup" data-name="${name}">+ Note</button>
+		</td>`;
 	}
 
 	function dayBadgeHtml(days) {
