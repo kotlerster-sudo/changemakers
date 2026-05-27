@@ -435,20 +435,31 @@ def get_sankey_data(entitlement_code, days=30, geography=None):
 def get_ac_review_queue(entitlement_code, status_filter="Pending AC Review"):
     """
     Returns Generic AC Review records for the current user's geography/AC scope.
+
+    AC scoping: the `co` field on a Generic AC Review is the field-CO who
+    escalated, not the AC. ACs are scoped via `Street List - WRP.ac_alloted`,
+    and a review's `container` matches the beneficiary's street, so we filter
+    `container IN (streets allotted to this AC)`.
     """
     access = resolve_user_access(entitlement_code)
     filters = {"entitlement": entitlement_code}
     if status_filter:
         filters["status"] = status_filter
 
-    # AC only sees their own COs' records
     if access["access_level"] == "Area Coordinator":
-        # Find COs under this AC — for now, use the AC's own CO ID
-        ac_co = frappe.db.get_value(
+        ac_staff = frappe.db.get_value(
             "Staff details - WRP", {"mail_id": frappe.session.user}, "name"
         )
-        if ac_co:
-            filters["co"] = ac_co
+        if not ac_staff:
+            return {"reviews": []}
+        ac_streets = frappe.get_all(
+            "Street List  - WRP",
+            filters={"ac_alloted": ac_staff},
+            pluck="name",
+        )
+        if not ac_streets:
+            return {"reviews": []}
+        filters["container"] = ["in", ac_streets]
 
     reviews = frappe.get_all(
         "Generic AC Review",
