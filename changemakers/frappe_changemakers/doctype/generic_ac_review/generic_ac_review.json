@@ -68,7 +68,7 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "Pending AC Review\nCleared – Will Apply\nBlocked – No Resolution",
+   "options": "Pending AC Review\nCleared – Will Apply\nBlocked – No Resolution\nClosed – Unreachable",
    "reqd": 1,
    "in_list_view": 1,
    "default": "Pending AC Review"
