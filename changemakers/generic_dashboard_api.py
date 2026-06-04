@@ -742,6 +742,93 @@ def maybe_escalate_for_ac_review(entitlement_code, beneficiary_id, visit_count, 
     }).insert(ignore_permissions=True)
 
 
+# ── Org progress table ───────────────────────────────────────────────────────
+
+@frappe.whitelist()
+def get_org_progress_table(entitlement_code):
+    """
+    Returns one row per implementing org showing total beneficiaries and
+    bucket breakdown — the denominator-vs-progress view for partner NGOs.
+    Org is resolved via beneficiary.street → Street List - WRP.implementing_org.
+    """
+    from changemakers.entitlement_api import (
+        _load_config, _bucket, _filter_active_beneficiaries,
+    )
+
+    config = _load_config(entitlement_code)
+
+    beneficiaries = frappe.get_all(
+        "Generic Beneficiary",
+        filters={"entitlement": entitlement_code},
+        fields=["name", "container", "street", "assigned_co",
+                "doc1_status", "doc2_status", "doc3_status", "doc4_status",
+                "final_status", "visit_count", "last_visited_at",
+                "source_docname"],
+    )
+    beneficiaries = _filter_active_beneficiaries(beneficiaries)
+
+    # Resolve implementing_org per street
+    streets = list({b.street for b in beneficiaries if b.street})
+    street_org = {}
+    if streets:
+        rows = frappe.get_all(
+            "Street List  - WRP",
+            filters={"name": ["in", streets]},
+            fields=["name", "implementing_org"],
+        )
+        street_org = {r.name: r.implementing_org or "Unknown" for r in rows}
+
+    container_finals = {}
+    if config["final_status_at"] == "Household":
+        cids = list({b.container for b in beneficiaries if b.container})
+        if cids:
+            rows = frappe.get_all(
+                "Generic Container",
+                filters={"name": ["in", cids]},
+                fields=["name", "final_status"],
+            )
+            container_finals = {r.name: r.final_status or "" for r in rows}
+
+    org_buckets = defaultdict(lambda: defaultdict(int))
+    org_visited = defaultdict(int)
+    org_total = defaultdict(int)
+
+    for b in beneficiaries:
+        org = street_org.get(b.street, "Unknown") if b.street else "Unknown"
+        cf = container_finals.get(b.container, "") if b.container else ""
+        bkt = _bucket(config, frappe._dict(b), cf)
+        org_buckets[org][bkt] += 1
+        org_total[org] += 1
+        if int(b.visit_count or 0) > 0:
+            org_visited[org] += 1
+
+    result = []
+    for org, total in org_total.items():
+        buckets = org_buckets[org]
+        goal = buckets.get("goal", 0)
+        visited = org_visited[org]
+        result.append({
+            "org":              org,
+            "total":            total,
+            "visited":          visited,
+            "unvisited":        buckets.get("unvisited", 0),
+            "docs_in_progress": buckets.get("docs_in_progress", 0),
+            "docs_ready":       buckets.get("docs_ready", 0),
+            "applied_pending":  buckets.get("applied_pending", 0),
+            "goal":             goal,
+            "negative":         buckets.get("negative", 0),
+            "saturation_pct":   round(goal / total * 100, 1) if total else 0,
+            "coverage_pct":     round(visited / total * 100, 1) if total else 0,
+        })
+
+    result.sort(key=lambda x: -x["saturation_pct"])
+    return {
+        "rows":               result,
+        "entitlement_name":   config["name"],
+        "goal_label":         config["final_status_label"],
+    }
+
+
 # ── Bucket drilldown ──────────────────────────────────────────────────────────
 
 @frappe.whitelist()
