@@ -22,6 +22,22 @@
    "wildcard_filter": 0
   },
   {
+   "fieldname": "intervention_unit",
+   "fieldtype": "Link",
+   "label": "Intervention Unit",
+   "mandatory": 0,
+   "options": "Intervention Units-WRP",
+   "wildcard_filter": 0
+  },
+  {
+   "fieldname": "street",
+   "fieldtype": "Link",
+   "label": "Street",
+   "mandatory": 0,
+   "options": "Street List  - WRP",
+   "wildcard_filter": 0
+  },
+  {
    "fieldname": "co",
    "fieldtype": "Link",
    "label": "CO",
@@ -32,7 +48,7 @@
  ],
  "idx": 0,
  "is_standard": "Yes",
- "modified": "2026-05-22 00:00:00.000000",
+ "modified": "2026-06-04 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Changemakers",
  "name": "Entitlement Daily Update Report",
