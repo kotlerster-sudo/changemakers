@@ -94,16 +94,33 @@ def _get_streets_for_geography(geography=None, ac_id=None):
     if not streets:
         return []
     if geography:
-        # Filter streets by their zone/city — using the zone's geography relationship
-        # For now, geography is applied at entitlement level, not street level
         pass
     return streets
+
+
+def _get_scope_streets(implementing_org=None, intervention_unit=None, street=None):
+    """
+    Returns street names for the given scope filter, or None (= no filter).
+    Most specific wins: street > IU > org.
+    Returns [] if scope is set but matches nothing (→ zero results).
+    """
+    if not implementing_org and not intervention_unit and not street:
+        return None
+    if street:
+        return [street]
+    filters = {}
+    if intervention_unit:
+        filters["intervention_units"] = intervention_unit
+    else:
+        filters["implementing_org"] = implementing_org
+    return frappe.get_all("Street List  - WRP", filters=filters, pluck="name")
 
 
 # ── Programme overview ────────────────────────────────────────────────────────
 
 @frappe.whitelist()
-def get_programme_overview(entitlement_code, geography=None):
+def get_programme_overview(entitlement_code, geography=None,
+                           implementing_org=None, intervention_unit=None, street=None):
     """
     Programme Manager / MIS level overview for one scheme.
 
@@ -116,6 +133,20 @@ def get_programme_overview(entitlement_code, geography=None):
 
     config = _load_config(entitlement_code)
     filters = {"entitlement": entitlement_code}
+
+    scope_streets = _get_scope_streets(implementing_org, intervention_unit, street)
+    if scope_streets is not None:
+        if not scope_streets:
+            return {
+                "entitlement_code": entitlement_code, "entitlement_name": config["name"],
+                "total": 0, "visited": 0, "goal_count": 0, "negative_count": 0,
+                "saturation_pct": 0, "coverage_pct": 0, "sla_overdue_count": 0,
+                "pending_ac_reviews": 0, "bucket_counts": {},
+                "update_rate_bands": {"critical": 0, "poor": 0, "acceptable": 0, "good": 0},
+                "goal_label": config["final_status_label"],
+                "final_status_label": config["final_status_label"],
+            }
+        filters["street"] = ["in", scope_streets]
 
     beneficiaries = frappe.get_all(
         "Generic Beneficiary",
@@ -158,7 +189,7 @@ def get_programme_overview(entitlement_code, geography=None):
     coverage_pct = round(visited_count / total * 100, 1) if total else 0
 
     # Update rate bands from Entitlement Status Log
-    band_counts = _get_update_rate_bands_summary(entitlement_code)
+    band_counts = _get_update_rate_bands_summary(entitlement_code, scope_streets=scope_streets)
 
     # Generic AC Review pending
     pending_ac_reviews = frappe.db.count(
@@ -184,7 +215,7 @@ def get_programme_overview(entitlement_code, geography=None):
     }
 
 
-def _get_update_rate_bands_summary(entitlement_code):
+def _get_update_rate_bands_summary(entitlement_code, scope_streets=None, date_from=None, date_to=None):
     """
     Returns count of COs in each update rate band.
     Update rate = productive visits (at least one status change) / total visits.
@@ -192,7 +223,12 @@ def _get_update_rate_bands_summary(entitlement_code):
     """
     from changemakers.entitlement_api import ACTIVE_IND_JOIN, ACTIVE_IND_WHERE, IND_ACTIVE_STATUS
 
-    # Get all COs with beneficiaries for this scheme (exclude moved-out individuals)
+    scope_cond = ""
+    if scope_streets is not None:
+        if not scope_streets:
+            return {"critical": 0, "poor": 0, "acceptable": 0, "good": 0}
+        scope_cond = " AND gb.street IN %(scope_streets)s"
+
     co_rows = frappe.db.sql(f"""
         SELECT gb.assigned_co AS assigned_co, SUM(gb.visit_count) as total_visits
         FROM `tabGeneric Beneficiary` gb
@@ -200,21 +236,34 @@ def _get_update_rate_bands_summary(entitlement_code):
         WHERE gb.entitlement = %(e)s
           AND gb.assigned_co IS NOT NULL AND gb.assigned_co != ''
           AND {ACTIVE_IND_WHERE}
+          {scope_cond}
         GROUP BY gb.assigned_co
-    """, {"e": entitlement_code, "_ind_active_status": IND_ACTIVE_STATUS}, as_dict=True)
+    """, {
+        "e": entitlement_code,
+        "_ind_active_status": IND_ACTIVE_STATUS,
+        "scope_streets": tuple(scope_streets) if scope_streets else (),
+    }, as_dict=True)
 
     if not co_rows:
         return {"critical": 0, "poor": 0, "acceptable": 0, "good": 0}
 
-    # Count status changes per CO in last 30 days
-    co_changes = frappe.db.sql("""
+    date_cond = "AND changed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+    date_vals = {}
+    if date_from and date_to:
+        date_cond = "AND changed_at BETWEEN %(date_from)s AND %(date_to)s"
+        date_vals = {"date_from": date_from + " 00:00:00", "date_to": date_to + " 23:59:59"}
+    elif date_from:
+        date_cond = "AND changed_at >= %(date_from)s"
+        date_vals = {"date_from": date_from + " 00:00:00"}
+
+    co_changes = frappe.db.sql(f"""
         SELECT co, COUNT(*) as changes
         FROM `tabEntitlement Status Log`
         WHERE entitlement = %(e)s
-          AND changed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+          {date_cond}
           AND co IS NOT NULL AND co != ''
         GROUP BY co
-    """, {"e": entitlement_code}, as_dict=True)
+    """, {"e": entitlement_code, **date_vals}, as_dict=True)
 
     changes_by_co = {r.co: r.changes for r in co_changes}
 
@@ -240,7 +289,9 @@ def _get_update_rate_bands_summary(entitlement_code):
 # ── CO performance table ──────────────────────────────────────────────────────
 
 @frappe.whitelist()
-def get_co_performance_table(entitlement_code, geography=None):
+def get_co_performance_table(entitlement_code, geography=None,
+                             implementing_org=None, intervention_unit=None, street=None,
+                             date_from=None, date_to=None):
     """
     Per-CO performance table for Programme Manager / MIS workspace.
     Returns a list of COs with their key metrics and update rate band.
@@ -250,11 +301,17 @@ def get_co_performance_table(entitlement_code, geography=None):
     )
 
     config = _load_config(entitlement_code)
+    gb_filters = {"entitlement": entitlement_code}
 
-    # Get all beneficiaries grouped by CO
+    scope_streets = _get_scope_streets(implementing_org, intervention_unit, street)
+    if scope_streets is not None:
+        if not scope_streets:
+            return {"rows": [], "entitlement_name": config["name"]}
+        gb_filters["street"] = ["in", scope_streets]
+
     beneficiaries = frappe.get_all(
         "Generic Beneficiary",
-        filters={"entitlement": entitlement_code},
+        filters=gb_filters,
         fields=["name", "container", "street", "assigned_co",
                 "doc1_status", "doc2_status", "doc3_status", "doc4_status",
                 "final_status", "visit_count", "last_visited_at",
@@ -289,14 +346,23 @@ def get_co_performance_table(entitlement_code, geography=None):
         if _sla_overdue_days(config, b) > 0:
             co_sla[co] += 1
 
-    # Status change counts per CO (last 30 days)
-    co_changes = frappe.db.sql("""
+    # Status change counts per CO (date range or default 30 days)
+    _date_cond = "AND changed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+    _date_vals = {}
+    if date_from and date_to:
+        _date_cond = "AND changed_at BETWEEN %(date_from)s AND %(date_to)s"
+        _date_vals = {"date_from": date_from + " 00:00:00", "date_to": date_to + " 23:59:59"}
+    elif date_from:
+        _date_cond = "AND changed_at >= %(date_from)s"
+        _date_vals = {"date_from": date_from + " 00:00:00"}
+
+    co_changes = frappe.db.sql(f"""
         SELECT co, COUNT(*) as changes
         FROM `tabEntitlement Status Log`
         WHERE entitlement = %(e)s
-          AND changed_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+          {_date_cond}
         GROUP BY co
-    """, {"e": entitlement_code}, as_dict=True)
+    """, {"e": entitlement_code, **_date_vals}, as_dict=True)
     changes_by_co = {r.co: r.changes for r in co_changes}
 
     # Pending AC Reviews per CO
@@ -745,7 +811,8 @@ def maybe_escalate_for_ac_review(entitlement_code, beneficiary_id, visit_count, 
 # ── Org progress table ───────────────────────────────────────────────────────
 
 @frappe.whitelist()
-def get_org_progress_table(entitlement_code):
+def get_org_progress_table(entitlement_code,
+                           implementing_org=None, intervention_unit=None, street=None):
     """
     Returns one row per implementing org showing total beneficiaries and
     bucket breakdown — the denominator-vs-progress view for partner NGOs.
@@ -756,10 +823,17 @@ def get_org_progress_table(entitlement_code):
     )
 
     config = _load_config(entitlement_code)
+    gb_filters = {"entitlement": entitlement_code}
+
+    scope_streets = _get_scope_streets(implementing_org, intervention_unit, street)
+    if scope_streets is not None:
+        if not scope_streets:
+            return {"rows": [], "entitlement_name": config["name"], "goal_label": config["final_status_label"]}
+        gb_filters["street"] = ["in", scope_streets]
 
     beneficiaries = frappe.get_all(
         "Generic Beneficiary",
-        filters={"entitlement": entitlement_code},
+        filters=gb_filters,
         fields=["name", "container", "street", "assigned_co",
                 "doc1_status", "doc2_status", "doc3_status", "doc4_status",
                 "final_status", "visit_count", "last_visited_at",
@@ -832,7 +906,8 @@ def get_org_progress_table(entitlement_code):
 # ── Bucket drilldown ──────────────────────────────────────────────────────────
 
 @frappe.whitelist()
-def get_bucket_drilldown(entitlement_code, bucket, co_id=None, geography=None):
+def get_bucket_drilldown(entitlement_code, bucket, co_id=None, geography=None,
+                         implementing_org=None, intervention_unit=None, street=None):
     """
     Level 1 (co_id=None): per-CO count for a bucket, sorted by count desc.
     Level 2 (co_id given): beneficiary list (up to 200) for that CO+bucket.
@@ -845,6 +920,12 @@ def get_bucket_drilldown(entitlement_code, bucket, co_id=None, geography=None):
     filters = {"entitlement": entitlement_code}
     if co_id:
         filters["assigned_co"] = co_id
+
+    scope_streets = _get_scope_streets(implementing_org, intervention_unit, street)
+    if scope_streets is not None:
+        if not scope_streets:
+            return {"level": "co_list", "bucket": bucket, "items": [], "total": 0}
+        filters["street"] = ["in", scope_streets]
 
     beneficiaries = frappe.get_all(
         "Generic Beneficiary",
