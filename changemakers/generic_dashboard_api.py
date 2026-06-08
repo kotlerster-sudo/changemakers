@@ -439,22 +439,33 @@ def get_co_performance_table(entitlement_code, geography=None,
 # ── Sankey / transitions data ─────────────────────────────────────────────────
 
 @frappe.whitelist()
-def get_sankey_data(entitlement_code, days=30, geography=None):
+def get_sankey_data(entitlement_code, days=30, geography=None,
+                    implementing_org=None, intervention_unit=None, street=None):
     """
     Bucket-to-bucket transition counts for a Sankey diagram.
     Pulls from Entitlement Status Log (final_status changes only,
     which drive bucket transitions).
     """
-    rows = frappe.db.sql("""
+    scope_streets = _get_scope_streets(implementing_org, intervention_unit, street)
+    scope_cond = ""
+    scope_vals = {}
+    if scope_streets is not None:
+        if not scope_streets:
+            return {"bucket_transitions": [], "slot_transitions": [], "days": int(days)}
+        scope_cond = "AND beneficiary IN (SELECT name FROM `tabGeneric Beneficiary` WHERE entitlement = %(e)s AND street IN %(scope_streets)s)"
+        scope_vals = {"scope_streets": tuple(scope_streets)}
+
+    rows = frappe.db.sql(f"""
         SELECT old_bucket, new_bucket, COUNT(*) as cnt
         FROM `tabEntitlement Status Log`
         WHERE entitlement = %(e)s
           AND doc_slot = 'final_status'
           AND old_bucket != new_bucket
           AND changed_at >= DATE_SUB(NOW(), INTERVAL %(d)s DAY)
+          {scope_cond}
         GROUP BY old_bucket, new_bucket
         ORDER BY cnt DESC
-    """, {"e": entitlement_code, "d": int(days)}, as_dict=True)
+    """, {"e": entitlement_code, "d": int(days), **scope_vals}, as_dict=True)
 
     BUCKET_LABELS = {
         "unvisited":      "Unvisited",
@@ -476,17 +487,18 @@ def get_sankey_data(entitlement_code, days=30, geography=None):
     ]
 
     # Also gather slot-level transitions (doc changes)
-    slot_rows = frappe.db.sql("""
+    slot_rows = frappe.db.sql(f"""
         SELECT doc_label, old_label, new_label, COUNT(*) as cnt
         FROM `tabEntitlement Status Log`
         WHERE entitlement = %(e)s
           AND doc_slot != 'final_status'
           AND changed_at >= DATE_SUB(NOW(), INTERVAL %(d)s DAY)
           AND old_label != new_label
+          {scope_cond}
         GROUP BY doc_label, old_label, new_label
         ORDER BY cnt DESC
         LIMIT 50
-    """, {"e": entitlement_code, "d": int(days)}, as_dict=True)
+    """, {"e": entitlement_code, "d": int(days), **scope_vals}, as_dict=True)
 
     return {
         "bucket_transitions": transitions,
@@ -673,12 +685,24 @@ def update_ac_review(review_id, status, ac_notes=None):
 # ── Update rate by CO ─────────────────────────────────────────────────────────
 
 @frappe.whitelist()
-def get_update_rate_by_co(entitlement_code, days=30):
+def get_update_rate_by_co(entitlement_code, days=30,
+                          implementing_org=None, intervention_unit=None, street=None):
     """
     Returns update rate per CO with band classification.
     Used for the bar chart in the Programme Dashboard.
     """
     from changemakers.entitlement_api import ACTIVE_IND_JOIN, ACTIVE_IND_WHERE, IND_ACTIVE_STATUS
+
+    scope_streets = _get_scope_streets(implementing_org, intervention_unit, street)
+    scope_cond_gb = ""
+    scope_cond_log = ""
+    scope_vals = {}
+    if scope_streets is not None:
+        if not scope_streets:
+            return {"rows": [], "days": int(days)}
+        scope_cond_gb = "AND gb.street IN %(scope_streets)s"
+        scope_cond_log = "AND beneficiary IN (SELECT name FROM `tabGeneric Beneficiary` WHERE entitlement = %(e)s AND street IN %(scope_streets)s)"
+        scope_vals = {"scope_streets": tuple(scope_streets)}
 
     co_visits = frappe.db.sql(f"""
         SELECT gb.assigned_co AS assigned_co, SUM(gb.visit_count) as total_visits
@@ -687,17 +711,19 @@ def get_update_rate_by_co(entitlement_code, days=30):
         WHERE gb.entitlement = %(e)s
           AND gb.assigned_co IS NOT NULL AND gb.assigned_co != ''
           AND {ACTIVE_IND_WHERE}
+          {scope_cond_gb}
         GROUP BY gb.assigned_co
-    """, {"e": entitlement_code, "_ind_active_status": IND_ACTIVE_STATUS}, as_dict=True)
+    """, {"e": entitlement_code, "_ind_active_status": IND_ACTIVE_STATUS, **scope_vals}, as_dict=True)
 
-    co_changes = frappe.db.sql("""
+    co_changes = frappe.db.sql(f"""
         SELECT co, COUNT(*) as changes
         FROM `tabEntitlement Status Log`
         WHERE entitlement = %(e)s
           AND changed_at >= DATE_SUB(NOW(), INTERVAL %(d)s DAY)
           AND co IS NOT NULL AND co != ''
+          {scope_cond_log}
         GROUP BY co
-    """, {"e": entitlement_code, "d": int(days)}, as_dict=True)
+    """, {"e": entitlement_code, "d": int(days), **scope_vals}, as_dict=True)
     changes_by_co = {r.co: r.changes for r in co_changes}
 
     co_ids = [r.assigned_co for r in co_visits if r.assigned_co]
@@ -761,6 +787,28 @@ def get_dashboard_schemes(geography=None):
         order_by="entitlement_code asc",
     )
     return {"schemes": [dict(s) for s in schemes]}
+
+
+@frappe.whitelist()
+def get_implementing_orgs(entitlement_code):
+    """Returns distinct implementing orgs that have beneficiaries in a scheme."""
+    streets = frappe.get_all(
+        "Generic Beneficiary",
+        filters={"entitlement": entitlement_code},
+        pluck="street",
+        distinct=True,
+    )
+    streets = [s for s in streets if s]
+    if not streets:
+        return {"orgs": []}
+    orgs = frappe.get_all(
+        "Street List  - WRP",
+        filters={"name": ["in", streets]},
+        fields=["implementing_org"],
+        distinct=True,
+    )
+    result = sorted(o.implementing_org for o in orgs if o.implementing_org)
+    return {"orgs": result}
 
 
 # ── Auto-escalation helper (called from entitlement_api) ─────────────────────
