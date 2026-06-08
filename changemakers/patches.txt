@@ -17,3 +17,5 @@ changemakers.patches.backfill_wrp_visit_log
 changemakers.patches.install_wrp_ac_review
 changemakers.patches.add_followup_notes_to_ac_review
 changemakers.patches.reload_generic_ac_review_status
+
+changemakers.patches.setup_ecp_workspace
