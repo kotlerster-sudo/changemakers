@@ -36,6 +36,9 @@ def execute():
     doc.set("custom_blocks", [])
     doc.append("custom_blocks", {"custom_block_name": html_block_name, "label": ""})
 
+    # ECP Coverage Dashboard block may not exist yet: fixtures sync after patches
+    doc.flags.ignore_links = True
+
     if doc.is_new():
         doc.insert(ignore_permissions=True)
     else:
