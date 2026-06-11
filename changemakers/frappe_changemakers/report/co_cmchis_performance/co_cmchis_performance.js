@@ -1,10 +1,39 @@
 frappe.query_reports["CO CMCHIS Performance"] = {
     filters: [
         {
+            fieldname: "organisation",
+            label: __("Organisation"),
+            fieldtype: "Link",
+            options: "Implementing Org-WRP",
+            on_change: function () {
+                frappe.query_report.set_filter_value("cluster", "");
+                frappe.query_report.set_filter_value("intervention_unit", "");
+                frappe.query_report.set_filter_value("street", "");
+            },
+        },
+        {
+            fieldname: "cluster",
+            label: __("Cluster"),
+            fieldtype: "Link",
+            options: "Cluster - WRP",
+            on_change: function () {
+                frappe.query_report.set_filter_value("intervention_unit", "");
+                frappe.query_report.set_filter_value("street", "");
+            },
+        },
+        {
             fieldname: "intervention_unit",
             label: __("Intervention Unit"),
             fieldtype: "Link",
             options: "Intervention Units-WRP",
+            get_query: function () {
+                var f = {};
+                var org = frappe.query_report.get_filter_value("organisation");
+                var cluster = frappe.query_report.get_filter_value("cluster");
+                if (org) f.implementing_org = org;
+                if (cluster) f.cluster = cluster;
+                return { filters: f };
+            },
             on_change: function () {
                 frappe.query_report.set_filter_value("street", "");
             },
@@ -15,8 +44,14 @@ frappe.query_reports["CO CMCHIS Performance"] = {
             fieldtype: "Link",
             options: "Street List  - WRP",
             get_query: function () {
+                var f = {};
                 var iu = frappe.query_report.get_filter_value("intervention_unit");
-                return iu ? { filters: { intervention_units: iu } } : {};
+                var org = frappe.query_report.get_filter_value("organisation");
+                var cluster = frappe.query_report.get_filter_value("cluster");
+                if (iu) f.intervention_units = iu;
+                if (org) f.implementing_org = org;
+                if (cluster) f.cluster = cluster;
+                return { filters: f };
             },
         },
     ],

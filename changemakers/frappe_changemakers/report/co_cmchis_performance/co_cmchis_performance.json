@@ -75,6 +75,22 @@
  "doctype": "Report",
  "filters": [
   {
+   "fieldname": "organisation",
+   "fieldtype": "Link",
+   "label": "Organisation",
+   "mandatory": 0,
+   "options": "Implementing Org-WRP",
+   "wildcard_filter": 0
+  },
+  {
+   "fieldname": "cluster",
+   "fieldtype": "Link",
+   "label": "Cluster",
+   "mandatory": 0,
+   "options": "Cluster - WRP",
+   "wildcard_filter": 0
+  },
+  {
    "fieldname": "intervention_unit",
    "fieldtype": "Link",
    "label": "Intervention Unit",
@@ -93,7 +109,7 @@
  ],
  "idx": 0,
  "is_standard": "Yes",
- "modified": "2026-04-03 00:00:00.000000",
+ "modified": "2026-06-11 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Changemakers",
  "name": "CO CMCHIS Performance",

@@ -74,6 +74,12 @@ def get_data(filters):
     if filters.get("intervention_unit"):
         cond += " AND sl.intervention_units = %(intervention_unit)s"
         vals["intervention_unit"] = filters["intervention_unit"]
+    if filters.get("cluster"):
+        cond += " AND sl.cluster = %(cluster)s"
+        vals["cluster"] = filters["cluster"]
+    if filters.get("organisation"):
+        cond += " AND sl.implementing_org = %(organisation)s"
+        vals["organisation"] = filters["organisation"]
 
     org_filter = _user_org_filter()
     if org_filter is None:
