@@ -75,6 +75,9 @@ frappe.query_reports["CO CMCHIS Performance"] = {
         injectNeonDarkTheme();
     },
 
+    // Street sub-rows start collapsed; click a CO row to expand
+    initial_depth: 0,
+
     formatter: function (value, row, column, data, default_formatter) {
         value = default_formatter(value, row, column, data);
         if (!data) return value;
