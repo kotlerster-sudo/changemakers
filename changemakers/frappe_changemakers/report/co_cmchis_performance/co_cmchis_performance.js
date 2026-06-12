@@ -1,3 +1,18 @@
+// Custom on_change disables Frappe's built-in refresh-on-filter-change, so each
+// handler must trigger the refresh itself. Debounced so a cascading clear
+// (org -> cluster -> IU -> street) results in a single report run.
+var co_cmchis_perf_refresh = frappe.utils.debounce(function () {
+    frappe.query_report.refresh();
+}, 300);
+
+function co_cmchis_perf_clear(query_report, fieldnames) {
+    fieldnames.forEach(function (fieldname) {
+        if (query_report.get_filter_value(fieldname)) {
+            query_report.set_filter_value(fieldname, "");
+        }
+    });
+}
+
 frappe.query_reports["CO CMCHIS Performance"] = {
     filters: [
         {
@@ -5,10 +20,9 @@ frappe.query_reports["CO CMCHIS Performance"] = {
             label: __("Organisation"),
             fieldtype: "Link",
             options: "Implementing Org-WRP",
-            on_change: function () {
-                frappe.query_report.set_filter_value("cluster", "");
-                frappe.query_report.set_filter_value("intervention_unit", "");
-                frappe.query_report.set_filter_value("street", "");
+            on_change: function (query_report) {
+                co_cmchis_perf_clear(query_report, ["cluster", "intervention_unit", "street"]);
+                co_cmchis_perf_refresh();
             },
         },
         {
@@ -16,9 +30,9 @@ frappe.query_reports["CO CMCHIS Performance"] = {
             label: __("Cluster"),
             fieldtype: "Link",
             options: "Cluster - WRP",
-            on_change: function () {
-                frappe.query_report.set_filter_value("intervention_unit", "");
-                frappe.query_report.set_filter_value("street", "");
+            on_change: function (query_report) {
+                co_cmchis_perf_clear(query_report, ["intervention_unit", "street"]);
+                co_cmchis_perf_refresh();
             },
         },
         {
@@ -34,8 +48,9 @@ frappe.query_reports["CO CMCHIS Performance"] = {
                 if (cluster) f.cluster = cluster;
                 return { filters: f };
             },
-            on_change: function () {
-                frappe.query_report.set_filter_value("street", "");
+            on_change: function (query_report) {
+                co_cmchis_perf_clear(query_report, ["street"]);
+                co_cmchis_perf_refresh();
             },
         },
         {
