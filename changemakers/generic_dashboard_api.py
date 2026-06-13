@@ -191,11 +191,25 @@ def get_programme_overview(entitlement_code, geography=None,
     # Update rate bands from Entitlement Status Log
     band_counts = _get_update_rate_bands_summary(entitlement_code, scope_streets=scope_streets)
 
-    # Generic AC Review pending
-    pending_ac_reviews = frappe.db.count(
-        "Generic AC Review",
-        {"entitlement": entitlement_code, "status": "Pending AC Review"},
-    )
+    # Generic AC Review pending — respect the org/IU/street scope filter.
+    # Scope via the linked beneficiary's street (same approach as the Sankey
+    # endpoint) so this card narrows in step with every other metric above.
+    if scope_streets is not None:
+        pending_ac_reviews = frappe.db.sql("""
+            SELECT COUNT(*)
+            FROM `tabGeneric AC Review`
+            WHERE entitlement = %(e)s
+              AND status = 'Pending AC Review'
+              AND beneficiary IN (
+                SELECT name FROM `tabGeneric Beneficiary`
+                WHERE entitlement = %(e)s AND street IN %(scope_streets)s
+              )
+        """, {"e": entitlement_code, "scope_streets": tuple(scope_streets)})[0][0]
+    else:
+        pending_ac_reviews = frappe.db.count(
+            "Generic AC Review",
+            {"entitlement": entitlement_code, "status": "Pending AC Review"},
+        )
 
     return {
         "entitlement_code":   entitlement_code,
