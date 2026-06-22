@@ -521,6 +521,36 @@ def get_sankey_data(entitlement_code, days=30, geography=None,
     }
 
 
+def _resolve_ac_org_by_container(containers):
+    """Map each container (street) -> its allotted AC and implementing org.
+    Returns {container: {ac_alloted, ac_name, organisation}}."""
+    containers = [c for c in set(containers) if c]
+    if not containers:
+        return {}
+    streets = frappe.get_all(
+        "Street List  - WRP",
+        filters={"name": ["in", containers]},
+        fields=["name", "ac_alloted", "implementing_org"],
+    )
+    ac_ids = list({s.ac_alloted for s in streets if s.ac_alloted})
+    ac_names = {}
+    if ac_ids:
+        for r in frappe.get_all(
+            "Staff details - WRP",
+            filters={"name": ["in", ac_ids]},
+            fields=["name", "full_name"],
+        ):
+            ac_names[r.name] = r.full_name or r.name
+    out = {}
+    for s in streets:
+        out[s.name] = {
+            "ac_alloted": s.ac_alloted or "",
+            "ac_name": ac_names.get(s.ac_alloted, "") if s.ac_alloted else "",
+            "organisation": s.implementing_org or "",
+        }
+    return out
+
+
 # ── AC Review queue ───────────────────────────────────────────────────────────
 
 @frappe.whitelist()
@@ -562,7 +592,14 @@ def get_ac_review_queue(entitlement_code, status_filter="Pending AC Review"):
         order_by="escalation_date asc",
         limit=500,
     )
-    return {"reviews": [dict(r) for r in reviews]}
+    reviews = [dict(r) for r in reviews]
+    ac_map = _resolve_ac_org_by_container([r.get("container") for r in reviews])
+    for r in reviews:
+        info = ac_map.get(r.get("container"), {})
+        r["ac_alloted"] = info.get("ac_alloted", "")
+        r["ac_name"] = info.get("ac_name", "")
+        r["organisation"] = info.get("organisation", "")
+    return {"reviews": reviews}
 
 
 @frappe.whitelist()
@@ -598,9 +635,13 @@ def export_ac_reviews_xlsx(entitlement_code, status_filter=None):
         ):
             co_names[r.name] = r.full_name or r.name
 
+    # Resolve AC + organisation from each review container (street)
+    ac_map = _resolve_ac_org_by_container([r.container for r in rows])
+
     header = [
         "Review ID", "Beneficiary ID", "Beneficiary Name", "Container",
-        "CO ID", "CO Name", "Escalation Date", "Visit Count",
+        "CO ID", "CO Name", "AC Allotted", "Organisation",
+        "Escalation Date", "Visit Count",
         "Status", "AC Notes", "Resolved Date",
     ]
     data = [header]
@@ -612,6 +653,8 @@ def export_ac_reviews_xlsx(entitlement_code, status_filter=None):
             r.container or "",
             r.co or "",
             co_names.get(r.co, ""),
+            ac_map.get(r.container, {}).get("ac_name", ""),
+            ac_map.get(r.container, {}).get("organisation", ""),
             str(r.escalation_date) if r.escalation_date else "",
             int(r.visit_count or 0),
             r.status or "",
@@ -1051,3 +1094,96 @@ def get_bucket_drilldown(entitlement_code, bucket, co_id=None, geography=None,
         for co, cnt in sorted(by_co.items(), key=lambda x: -x[1])
     ]
     return {"level": "co_list", "bucket": bucket, "items": items, "total": len(in_bucket)}
+
+
+@frappe.whitelist()
+def get_co_status_breakdown(entitlement_code, geography=None,
+                            implementing_org=None, intervention_unit=None, street=None):
+    """Per-CO breakdown by final status for the Programme/MIS dashboards.
+
+    Columns: Total, Unvisited, Pending, then one column per final status in the
+    Entitlement Config (excluding the default "not started" status, e.g. OAP
+    "Not Applied", which is split into Unvisited / Pending by visit_count).
+    Org/IU/Street scoping mirrors get_co_performance_table.
+    """
+    from changemakers.entitlement_api import _load_config, _filter_active_beneficiaries
+
+    config = _load_config(entitlement_code)
+    gb_filters = {"entitlement": entitlement_code}
+    scope_streets = _get_scope_streets(implementing_org, intervention_unit, street)
+    if scope_streets is not None:
+        if not scope_streets:
+            return {"rows": [], "final_statuses": [], "entitlement_name": config["name"]}
+        gb_filters["street"] = ["in", scope_streets]
+
+    beneficiaries = frappe.get_all(
+        "Generic Beneficiary",
+        filters=gb_filters,
+        fields=["name", "container", "street", "assigned_co",
+                "final_status", "visit_count", "source_docname"],
+    )
+    beneficiaries = _filter_active_beneficiaries(beneficiaries)
+
+    container_finals = {}
+    if config["final_status_at"] == "Household":
+        cids = list({b.container for b in beneficiaries if b.container})
+        if cids:
+            for r in frappe.get_all("Generic Container",
+                                    filters={"name": ["in", cids]},
+                                    fields=["name", "final_status"]):
+                container_finals[r.name] = r.final_status or ""
+
+    default_value = ""
+    for s in config["final_statuses"]:
+        if not s["is_goal"] and not s["is_negative"] and not s["requires_unlock"]:
+            default_value = s["value"]
+            break
+    col_statuses = [s for s in config["final_statuses"] if s["value"] != default_value]
+    status_set = {s["value"] for s in col_statuses}
+
+    co_total = defaultdict(int)
+    co_unvisited = defaultdict(int)
+    co_pending = defaultdict(int)
+    co_status = defaultdict(lambda: defaultdict(int))
+
+    for b in beneficiaries:
+        co = b.assigned_co or "unassigned"
+        if config["final_status_at"] == "Household":
+            final = container_finals.get(b.container, "") if b.container else ""
+        else:
+            final = b.final_status or ""
+        co_total[co] += 1
+        if final and final in status_set:
+            co_status[co][final] += 1
+        elif int(b.visit_count or 0) == 0:
+            co_unvisited[co] += 1
+        else:
+            co_pending[co] += 1
+
+    co_ids = [c for c in co_total.keys() if c != "unassigned"]
+    co_names = {}
+    if co_ids:
+        for r in frappe.get_all("Staff details - WRP",
+                                filters={"name": ["in", co_ids]},
+                                fields=["name", "full_name"]):
+            co_names[r.name] = r.full_name or r.name
+
+    status_values = [s["value"] for s in col_statuses]
+    rows = []
+    for co, total in co_total.items():
+        if co == "unassigned":
+            continue
+        counts = {v: co_status[co].get(v, 0) for v in status_values}
+        rows.append({
+            "co_id": co,
+            "co_name": co_names.get(co, co),
+            "total": total,
+            "unvisited": co_unvisited[co],
+            "pending": co_pending[co],
+            "counts": counts,
+        })
+    rows.sort(key=lambda x: (x["co_name"] or "").lower())
+
+    final_statuses = [{"value": s["value"], "label": s["label"]} for s in col_statuses]
+    return {"rows": rows, "final_statuses": final_statuses,
+            "entitlement_name": config["name"]}
