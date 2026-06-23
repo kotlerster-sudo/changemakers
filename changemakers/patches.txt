@@ -19,3 +19,4 @@ changemakers.patches.add_followup_notes_to_ac_review
 changemakers.patches.reload_generic_ac_review_status
 
 changemakers.patches.setup_ecp_workspace
+changemakers.patches.add_oap_daily_update_shortcut_v3

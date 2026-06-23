@@ -98,22 +98,52 @@ def _get_streets_for_geography(geography=None, ac_id=None):
     return streets
 
 
+# Settlements NOT part of the active programme — excluded from every dashboard
+# so the not-for-Phase-1 IUs (e.g. TNDWWT / Arunodhaya) never inflate totals.
+_INACTIVE_SETTLEMENT_STATUSES = ("No", "Yes, but not for Phase 1")
+
+
+def _inactive_streets():
+    """Street names whose settlement_selection_status is inactive."""
+    return frappe.get_all(
+        "Street List  - WRP",
+        filters={"settlement_selection_status": ["in", _INACTIVE_SETTLEMENT_STATUSES]},
+        pluck="name",
+    )
+
+
+def _active_streets():
+    """Street names that ARE part of the active programme (everything except the
+    inactive settlement-selection statuses). Dash-agnostic (uses NOT IN)."""
+    return frappe.get_all(
+        "Street List  - WRP",
+        filters={"settlement_selection_status": ["not in", _INACTIVE_SETTLEMENT_STATUSES]},
+        pluck="name",
+    )
+
+
 def _get_scope_streets(implementing_org=None, intervention_unit=None, street=None):
     """
-    Returns street names for the given scope filter, or None (= no filter).
-    Most specific wins: street > IU > org.
-    Returns [] if scope is set but matches nothing (→ zero results).
+    Returns the street names in scope, ALWAYS restricted to active settlements
+    (excludes settlement_selection_status in _INACTIVE_SETTLEMENT_STATUSES).
+    Most specific wins: street > IU > org. Returns [] if nothing matches.
+    Never returns None — the active-settlement filter always applies, so every
+    caller (Programme + MIS dashboards) drops the not-for-Phase-1 IUs.
     """
-    if not implementing_org and not intervention_unit and not street:
-        return None
+    active = set(_active_streets())
     if street:
-        return [street]
-    filters = {}
+        return [street] if street in active else []
     if intervention_unit:
-        filters["intervention_units"] = intervention_unit
+        scoped = frappe.get_all(
+            "Street List  - WRP",
+            filters={"intervention_units": intervention_unit}, pluck="name")
+    elif implementing_org:
+        scoped = frappe.get_all(
+            "Street List  - WRP",
+            filters={"implementing_org": implementing_org}, pluck="name")
     else:
-        filters["implementing_org"] = implementing_org
-    return frappe.get_all("Street List  - WRP", filters=filters, pluck="name")
+        return list(active)
+    return [s for s in scoped if s in active]
 
 
 # ── Programme overview ────────────────────────────────────────────────────────
@@ -568,6 +598,7 @@ def get_ac_review_queue(entitlement_code, status_filter="Pending AC Review"):
     if status_filter:
         filters["status"] = status_filter
 
+    inactive = _inactive_streets()
     if access["access_level"] == "Area Coordinator":
         ac_staff = frappe.db.get_value(
             "Staff details - WRP", {"mail_id": frappe.session.user}, "name"
@@ -579,9 +610,12 @@ def get_ac_review_queue(entitlement_code, status_filter="Pending AC Review"):
             filters={"ac_alloted": ac_staff},
             pluck="name",
         )
+        ac_streets = [s for s in ac_streets if s not in inactive]
         if not ac_streets:
             return {"reviews": []}
         filters["container"] = ["in", ac_streets]
+    elif inactive:
+        filters["container"] = ["not in", inactive]
 
     reviews = frappe.get_all(
         "Generic AC Review",
