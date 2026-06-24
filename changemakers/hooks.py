@@ -7,6 +7,10 @@ app_license = "AGPL"
 app_version = "0.0.1"  # Hardcoded for Frappe Cloud compatibility
 required_frappe_version = ">=15.0.0 <16.0.0"
 
+# Azim Premji Foundation branding — replaces the default Frappe diamond in the
+# v16 desk sidebar app header / app switcher with the Foundation logo.
+app_logo_url = "/files/foundation-logo.png"
+
 # Runs after every bench migrate — ensures WRP report roles survive module sync resets
 scheduler_events = {
     "daily": [
