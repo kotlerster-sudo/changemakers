@@ -92,3 +92,31 @@ function injectNeonDarkTheme() {
     document.head.appendChild(s);
 }
 
+// ── APF sidebar: inject the "Operational Programs · Chennai" caption ──────────
+// The desk sidebar header has a fixed height + truncate(), which clips any CSS
+// ::after, so we add the caption as a real DOM element. Idempotent; re-applies
+// when the sidebar re-renders on navigation. Styled via .apf-prog-caption.
+(function () {
+    var CAPTION = "Operational Programs · Chennai";
+    function ensureCaption() {
+        var tc = document.querySelector(".body-sidebar .sidebar-header .title-container");
+        if (!tc || tc.querySelector(".apf-prog-caption")) return;
+        var el = document.createElement("div");
+        el.className = "apf-prog-caption";
+        el.textContent = CAPTION;
+        tc.appendChild(el);
+    }
+    function start() {
+        ensureCaption();
+        new MutationObserver(ensureCaption).observe(document.body, {
+            childList: true,
+            subtree: true,
+        });
+    }
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", start);
+    } else {
+        start();
+    }
+})();
+
