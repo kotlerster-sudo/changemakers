@@ -1,82 +1,119 @@
 /* =========================================================================
    Azim Premji Foundation — Operational Programs (Chennai) MIS
-   Desk sidebar theme.  Scoped to .body-sidebar only.
+   Desk sidebar theme.  Scoped to the sidebar only.
    Reversible: remove the `app_include_css` line in hooks.py and redeploy.
    Brand: blue #00A5D2 / orange #F37324  (see reference-apf-brand)
    ========================================================================= */
+
+/* Slightly wider sidebar — fewer wrapped labels, better proportion.
+   !important on the custom property wins regardless of stylesheet order. */
+:root {
+    --sidebar-width: 252px !important;
+}
 
 .body-sidebar {
     --apf-blue: #00A5D2;
     --apf-orange: #F37324;
     --apf-deep: #0e3a50;
     --apf-slate: #5b6b75;
-    --apf-blue-wash: rgba(0, 165, 210, 0.10);
-    --apf-blue-line: rgba(0, 165, 210, 0.35);
-    --apf-hover: #f1f5f7;
+    --apf-blue-wash: rgba(0, 165, 210, 0.12);
+    --apf-blue-line: rgba(0, 165, 210, 0.40);
+    --apf-hover: #eef3f5;
 }
 
-/* ---------- Header: bigger logo, brand title + caption ---------- */
+/* ===================== Header: brand mark + name + section ============== */
 .body-sidebar .sidebar-header {
     align-items: center;
-    padding: 14px 14px 10px;
-    margin-bottom: 4px;
+    padding: 13px 12px 12px;
+    margin-bottom: 2px;
+    overflow: visible;
 }
 
-/* drop the small coloured square; let the full wordmark breathe */
+/* APF symbol as a crisp app icon (the full wordmark stays in the navbar).
+   Removes the duplicate "Azim Premji Foundation" (logo wordmark + text). */
 .body-sidebar .sidebar-header > .sidebar-item-icon {
     background-color: transparent !important;
     width: auto !important;
     height: auto !important;
     padding: 0 !important;
     box-shadow: none !important;
+    flex: 0 0 auto;
+}
+.body-sidebar .sidebar-header .header-logo {
+    width: 40px;
+    height: 40px;
+    background: #ffffff url("/files/foundation-favicon.png") center / contain no-repeat;
+    border-radius: 9px;
+    box-shadow: 0 1px 3px rgba(16, 40, 60, 0.12);
 }
 .body-sidebar .sidebar-header .header-logo img {
-    height: 34px;
-    width: auto;
-    max-width: 184px;
-    object-fit: contain;
-    display: block;
+    display: none !important;
 }
 
 .body-sidebar .sidebar-header .title-container {
-    margin-left: 10px;
+    margin-left: 11px;
+    overflow: visible;
+    min-width: 0;
 }
 
-/* app_title (now "Azim Premji Foundation") */
+/* app_title — "Azim Premji Foundation" */
 .body-sidebar .sidebar-header .header-title {
-    font-size: 14.5px;
+    font-size: 14px !important;
     font-weight: 700;
-    line-height: 1.25;
-    color: var(--apf-deep);
+    line-height: 1.2;
+    color: var(--apf-deep) !important;
     white-space: normal;
+    overflow: visible;
 }
 
-/* divider + programme caption, placed beside/under the logo (brand-compliant) */
+/* secondary title / section caption — beside-the-logo, brand-divider style */
 .body-sidebar .sidebar-header .header-title::after {
     content: "Operational Programs \00B7 Chennai";
     display: block;
     margin-top: 5px;
     padding-top: 5px;
     border-top: 2px solid var(--apf-blue-line);
-    font-size: 10px;
+    font-size: 9.5px;
     font-weight: 600;
-    letter-spacing: 0.07em;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
     color: var(--apf-slate);
     white-space: normal;
+    line-height: 1.3;
 }
 
-/* native subtitle repeats app_title — hide it, caption above replaces it */
+/* native subtitle repeats app_title — hide it; caption above replaces it */
 .body-sidebar .sidebar-header .header-subtitle {
     display: none !important;
 }
 
-/* ---------- Items: fix the overlap, add rhythm ---------- */
+/* ===================== Scrolling: only when needed ===================== */
+/* flex child needs min-height:0 to actually scroll instead of overflowing */
+.body-sidebar .body-sidebar-top {
+    min-height: 0;
+    flex: 1 1 auto;
+}
+.body-sidebar .body-sidebar-top::-webkit-scrollbar {
+    width: 7px;
+}
+.body-sidebar .body-sidebar-top::-webkit-scrollbar-track {
+    background: transparent;
+}
+.body-sidebar .body-sidebar-top::-webkit-scrollbar-thumb {
+    background: rgba(14, 58, 80, 0.16);
+    border-radius: 4px;
+}
+.body-sidebar .body-sidebar-top:hover::-webkit-scrollbar-thumb {
+    background: rgba(14, 58, 80, 0.30);
+}
+
+/* ===================== Items: spacing + overlap fix ==================== */
 .body-sidebar .standard-sidebar-item {
     height: auto !important;
     min-height: 34px;
     border-radius: 9px;
-    margin: 1px 6px;
+    margin: 1px 4px;
+    position: relative;
     transition: background-color 0.12s ease, color 0.12s ease;
 }
 .body-sidebar .standard-sidebar-item .item-anchor {
@@ -95,14 +132,13 @@
     color: var(--apf-deep);
     font-size: 13.5px;
 }
-
 .body-sidebar .standard-sidebar-item .sidebar-item-icon {
     display: flex;
     align-items: center;
     transition: color 0.12s ease;
 }
 
-/* ---------- Section headers (Section Break items) ---------- */
+/* section headers (Section Break items) */
 .body-sidebar .section-item .item-anchor.section-break .sidebar-item-label {
     font-size: 10.5px;
     font-weight: 700;
@@ -111,7 +147,7 @@
     color: #9aa6ad;
 }
 
-/* ---------- Hover ---------- */
+/* ===================== Hover ===================== */
 .body-sidebar .standard-sidebar-item:hover {
     background-color: var(--apf-hover);
 }
@@ -119,48 +155,53 @@
     color: var(--apf-blue);
 }
 
-/* ---------- Active / selected ---------- */
-.body-sidebar .standard-sidebar-item.selected,
-.body-sidebar .sidebar-item-container.selected > .standard-sidebar-item,
-.body-sidebar .selected > .standard-sidebar-item {
-    background-color: var(--apf-blue-wash);
-    position: relative;
+/* ===================== Active / currently open ========================= */
+/* Frappe adds .active-sidebar to the open workspace's .standard-sidebar-item */
+.body-sidebar .standard-sidebar-item.active-sidebar {
+    background-color: var(--apf-blue-wash) !important;
 }
-.body-sidebar .standard-sidebar-item.selected .sidebar-item-label,
-.body-sidebar .selected > .standard-sidebar-item .sidebar-item-label {
+.body-sidebar .standard-sidebar-item.active-sidebar .sidebar-item-label {
     font-weight: 600;
     color: var(--apf-deep);
 }
-.body-sidebar .standard-sidebar-item.selected .sidebar-item-icon,
-.body-sidebar .selected > .standard-sidebar-item .sidebar-item-icon {
+.body-sidebar .standard-sidebar-item.active-sidebar .sidebar-item-icon {
     color: var(--apf-blue);
 }
-/* left accent bar slides in on selection */
-.body-sidebar .standard-sidebar-item.selected::before,
-.body-sidebar .selected > .standard-sidebar-item::before {
+/* clear left accent bar — the "you are here" identifier */
+.body-sidebar .standard-sidebar-item.active-sidebar::before {
     content: "";
     position: absolute;
-    left: -2px;
-    top: 6px;
-    bottom: 6px;
+    left: 0;
+    top: 5px;
+    bottom: 5px;
     width: 3px;
     border-radius: 0 3px 3px 0;
     background: var(--apf-blue);
     transform-origin: center;
     animation: apf-slidein 0.18s ease;
 }
+/* small orange dot on the far right of the active row */
+.body-sidebar .standard-sidebar-item.active-sidebar .item-anchor::after {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--apf-orange);
+    margin-left: 6px;
+    flex: 0 0 6px;
+}
 @keyframes apf-slidein {
     from { transform: scaleY(0); opacity: 0; }
     to   { transform: scaleY(1); opacity: 1; }
 }
 
-/* ---------- Expand/collapse chevron: smooth rotate ---------- */
+/* expand/collapse chevron: smooth rotate */
 .body-sidebar .sidebar-item-control .drop-icon,
 .body-sidebar .standard-sidebar-item .drop-icon {
     transition: transform 0.18s ease;
 }
 
-/* ---------- Respect reduced-motion ---------- */
+/* respect reduced-motion */
 @media (prefers-reduced-motion: reduce) {
     .body-sidebar * { transition: none !important; animation: none !important; }
 }
