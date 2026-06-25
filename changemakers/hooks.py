@@ -1,5 +1,5 @@
 app_name = "changemakers"
-app_title = "Frappe Changemakers"
+app_title = "Azim Premji Foundation"  # was "Frappe Changemakers" (sidebar/header rename, 2026-06-25; revert: restore this string)
 app_publisher = "Arunodhaya"
 app_description = "Empowering the people that do good."
 app_email = "co5cwrparunodhaya@gmail.com"
@@ -73,6 +73,10 @@ fixtures = [
 # Includes in <head>
 # ------------------
 app_include_js = "/assets/changemakers/js/changemakers.js"
+
+# APF Operational Programs sidebar theme — desk sidebar restyle (2026-06-25).
+# Reversible: delete this line and redeploy to fully revert the look.
+app_include_css = "/assets/changemakers/css/apf_sidebar.css"
 
 # Generic Entitlement API — whitelisted for Flutter
 override_whitelisted_methods = {

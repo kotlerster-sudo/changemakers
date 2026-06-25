@@ -1,0 +1,166 @@
+/* =========================================================================
+   Azim Premji Foundation — Operational Programs (Chennai) MIS
+   Desk sidebar theme.  Scoped to .body-sidebar only.
+   Reversible: remove the `app_include_css` line in hooks.py and redeploy.
+   Brand: blue #00A5D2 / orange #F37324  (see reference-apf-brand)
+   ========================================================================= */
+
+.body-sidebar {
+    --apf-blue: #00A5D2;
+    --apf-orange: #F37324;
+    --apf-deep: #0e3a50;
+    --apf-slate: #5b6b75;
+    --apf-blue-wash: rgba(0, 165, 210, 0.10);
+    --apf-blue-line: rgba(0, 165, 210, 0.35);
+    --apf-hover: #f1f5f7;
+}
+
+/* ---------- Header: bigger logo, brand title + caption ---------- */
+.body-sidebar .sidebar-header {
+    align-items: center;
+    padding: 14px 14px 10px;
+    margin-bottom: 4px;
+}
+
+/* drop the small coloured square; let the full wordmark breathe */
+.body-sidebar .sidebar-header > .sidebar-item-icon {
+    background-color: transparent !important;
+    width: auto !important;
+    height: auto !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+}
+.body-sidebar .sidebar-header .header-logo img {
+    height: 34px;
+    width: auto;
+    max-width: 184px;
+    object-fit: contain;
+    display: block;
+}
+
+.body-sidebar .sidebar-header .title-container {
+    margin-left: 10px;
+}
+
+/* app_title (now "Azim Premji Foundation") */
+.body-sidebar .sidebar-header .header-title {
+    font-size: 14.5px;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--apf-deep);
+    white-space: normal;
+}
+
+/* divider + programme caption, placed beside/under the logo (brand-compliant) */
+.body-sidebar .sidebar-header .header-title::after {
+    content: "Operational Programs \00B7 Chennai";
+    display: block;
+    margin-top: 5px;
+    padding-top: 5px;
+    border-top: 2px solid var(--apf-blue-line);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--apf-slate);
+    white-space: normal;
+}
+
+/* native subtitle repeats app_title — hide it, caption above replaces it */
+.body-sidebar .sidebar-header .header-subtitle {
+    display: none !important;
+}
+
+/* ---------- Items: fix the overlap, add rhythm ---------- */
+.body-sidebar .standard-sidebar-item {
+    height: auto !important;
+    min-height: 34px;
+    border-radius: 9px;
+    margin: 1px 6px;
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+.body-sidebar .standard-sidebar-item .item-anchor {
+    height: auto !important;
+    min-height: 34px;
+    align-items: center;
+    padding: 7px 9px;
+    border-radius: 9px;
+}
+
+/* THE FIX: wrapped labels must never collapse onto each other */
+.body-sidebar .sidebar-item-label {
+    line-height: 1.35 !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    color: var(--apf-deep);
+    font-size: 13.5px;
+}
+
+.body-sidebar .standard-sidebar-item .sidebar-item-icon {
+    display: flex;
+    align-items: center;
+    transition: color 0.12s ease;
+}
+
+/* ---------- Section headers (Section Break items) ---------- */
+.body-sidebar .section-item .item-anchor.section-break .sidebar-item-label {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: #9aa6ad;
+}
+
+/* ---------- Hover ---------- */
+.body-sidebar .standard-sidebar-item:hover {
+    background-color: var(--apf-hover);
+}
+.body-sidebar .standard-sidebar-item:hover .sidebar-item-icon {
+    color: var(--apf-blue);
+}
+
+/* ---------- Active / selected ---------- */
+.body-sidebar .standard-sidebar-item.selected,
+.body-sidebar .sidebar-item-container.selected > .standard-sidebar-item,
+.body-sidebar .selected > .standard-sidebar-item {
+    background-color: var(--apf-blue-wash);
+    position: relative;
+}
+.body-sidebar .standard-sidebar-item.selected .sidebar-item-label,
+.body-sidebar .selected > .standard-sidebar-item .sidebar-item-label {
+    font-weight: 600;
+    color: var(--apf-deep);
+}
+.body-sidebar .standard-sidebar-item.selected .sidebar-item-icon,
+.body-sidebar .selected > .standard-sidebar-item .sidebar-item-icon {
+    color: var(--apf-blue);
+}
+/* left accent bar slides in on selection */
+.body-sidebar .standard-sidebar-item.selected::before,
+.body-sidebar .selected > .standard-sidebar-item::before {
+    content: "";
+    position: absolute;
+    left: -2px;
+    top: 6px;
+    bottom: 6px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--apf-blue);
+    transform-origin: center;
+    animation: apf-slidein 0.18s ease;
+}
+@keyframes apf-slidein {
+    from { transform: scaleY(0); opacity: 0; }
+    to   { transform: scaleY(1); opacity: 1; }
+}
+
+/* ---------- Expand/collapse chevron: smooth rotate ---------- */
+.body-sidebar .sidebar-item-control .drop-icon,
+.body-sidebar .standard-sidebar-item .drop-icon {
+    transition: transform 0.18s ease;
+}
+
+/* ---------- Respect reduced-motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+    .body-sidebar * { transition: none !important; animation: none !important; }
+}
