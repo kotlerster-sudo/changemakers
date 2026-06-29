@@ -1,5 +1,5 @@
 /* =========================================================================
-   Azim Premji Foundation — Operational Programs (Chennai) MIS
+   Azim Premji Foundation — Operational Programmes (Chennai) MIS
    Desk sidebar theme.  Scoped to the sidebar only.
    Reversible: remove the `app_include_css` line in hooks.py and redeploy.
    Brand: blue #00A5D2 / orange #F37324  (see reference-apf-brand)
@@ -21,22 +21,36 @@
     --apf-hover: #eef3f5;
 }
 
-/* ===================== Header: brand mark + name + section ============== */
+/* ===================== Header: brand BANNER (not a tab) ================= */
+/* Under the hood the header is the app-switcher <a>. We strip every "tab"
+   affordance (chevron, hover, pointer) and present it as a contained
+   brand banner: the logo (which already carries "Azim Premji Foundation")
+   above a single tagline line. */
 .body-sidebar .sidebar-header {
-    /* free the hard-coded 48px height so the caption can sit below the logo */
     flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
+    text-align: center;
     height: auto !important;
-    padding: 14px 14px 12px;
-    margin-bottom: 2px;
+    width: auto;
+    padding: 16px 12px 14px;
+    margin: 8px 8px 8px;
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(0, 165, 210, 0.10), rgba(0, 165, 210, 0.035));
+    border: 1px solid var(--apf-blue-line);
+    cursor: default;
     position: relative;
     overflow: visible;
 }
+/* neutralise the app-switcher hover state — a banner doesn't light up */
+.body-sidebar .sidebar-header:hover,
+.body-sidebar .sidebar-header.hover {
+    background: linear-gradient(180deg, rgba(0, 165, 210, 0.10), rgba(0, 165, 210, 0.035)) !important;
+}
 
-/* full Azim Premji Foundation wordmark at its real aspect ratio (Frappe forces
-   32x32 + img 100% which squashes it — override to height-only, auto width) */
-.body-sidebar .sidebar-header > .sidebar-item-icon,
-.body-sidebar .sidebar-header .header-logo-container {
+/* full Azim Premji Foundation wordmark at its REAL aspect ratio, readable.
+   Frappe wraps the logo in a 32x32 coloured icon box + img 100% which
+   squashes it — override to transparent box, height-only / auto width. */
+.body-sidebar .sidebar-header > .sidebar-item-icon {
     background-color: transparent !important;
     width: auto !important;
     height: auto !important;
@@ -46,51 +60,52 @@
 }
 .body-sidebar .sidebar-header .header-logo {
     width: auto !important;
-    height: 36px !important;
+    height: auto !important;
     background: none !important;
+    display: flex;
+    justify-content: center;
 }
 .body-sidebar .sidebar-header .header-logo img {
     width: auto !important;
-    height: 36px !important;
+    height: 42px !important;
+    max-width: 200px;
     object-fit: contain;
     display: block !important;
 }
 
 /* the wordmark already carries the org name — hide the duplicate text title
-   and the native subtitle (both use truncate(), which also clipped the caption) */
+   and the native subtitle (both use truncate(), which also clips captions) */
 .body-sidebar .sidebar-header .header-title,
 .body-sidebar .sidebar-header .header-subtitle {
     display: none !important;
 }
 
+/* hide the app-switcher chevron entirely — this is a banner, not a tab */
+.body-sidebar .sidebar-header .drop-icon {
+    display: none !important;
+}
+
 .body-sidebar .sidebar-header .title-container {
-    margin-left: 0 !important;
-    margin-top: 9px;
+    margin: 10px 0 0 0 !important;
     width: 100%;
     overflow: visible !important;
     white-space: normal !important;
     display: block;
 }
 
-/* secondary title — injected as a real element by changemakers.js (reliable;
-   a CSS ::after gets clipped by the header's fixed height + truncate) */
+/* the tagline — injected as a real element by changemakers.js (reliable;
+   a CSS ::after gets clipped by the header's truncate()) */
 .body-sidebar .sidebar-header .apf-prog-caption {
-    padding-top: 8px;
-    border-top: 2px solid var(--apf-blue-line);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
+    padding-top: 9px;
+    border-top: 1.5px solid var(--apf-blue-line);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.10em;
     text-transform: uppercase;
-    color: var(--apf-slate);
+    color: var(--apf-deep);
     line-height: 1.35;
     white-space: normal;
-}
-
-/* app-switcher chevron to the top-right corner */
-.body-sidebar .sidebar-header .drop-icon {
-    position: absolute;
-    top: 14px;
-    right: 10px;
+    text-align: center;
 }
 
 /* ===================== Scrolling: only when needed ===================== */

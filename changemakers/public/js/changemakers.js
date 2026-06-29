@@ -97,7 +97,7 @@ function injectNeonDarkTheme() {
 // ::after, so we add the caption as a real DOM element. Idempotent; re-applies
 // when the sidebar re-renders on navigation. Styled via .apf-prog-caption.
 (function () {
-    var CAPTION = "Operational Programs · Chennai";
+    var CAPTION = "Operational Programmes";
     function ensureCaption() {
         var tc = document.querySelector(".body-sidebar .sidebar-header .title-container");
         if (!tc || tc.querySelector(".apf-prog-caption")) return;
