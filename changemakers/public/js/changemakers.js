@@ -99,7 +99,11 @@ function injectNeonDarkTheme() {
 (function () {
     var CAPTION = "Operational Programmes";
     function ensureCaption() {
-        var tc = document.querySelector(".body-sidebar .sidebar-header .title-container");
+        // Deployed Frappe renders the header as a.app-switcher-dropdown > .d-flex;
+        // newer builds use .sidebar-header .title-container. Support both.
+        var tc =
+            document.querySelector(".body-sidebar .app-switcher-dropdown .d-flex") ||
+            document.querySelector(".body-sidebar .sidebar-header .title-container");
         if (!tc || tc.querySelector(".apf-prog-caption")) return;
         var el = document.createElement("div");
         el.className = "apf-prog-caption";

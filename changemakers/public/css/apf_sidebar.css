@@ -108,6 +108,88 @@
     text-align: center;
 }
 
+/* ===================== Header banner — DEPLOYED structure ============== */
+/* The live Frappe build (older than local) renders the app header as
+   `a.app-switcher-dropdown > .standard-sidebar-item > .d-flex` with
+   `.app-logo-container > img.app-logo`, `.app-title`, and a
+   `.sidebar-item-control > .drop-icon` chevron — NOT `.sidebar-header`.
+   These rules turn THAT into the same banner. (Both selector sets are kept
+   so the banner survives a Frappe upgrade to the newer sidebar markup.) */
+.body-sidebar .app-switcher-dropdown {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 8px;
+    padding: 15px 12px 13px;
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(0, 165, 210, 0.10), rgba(0, 165, 210, 0.035));
+    border: 1px solid var(--apf-blue-line);
+    cursor: default;
+    overflow: visible;
+}
+/* neutralise the inner item's tab affordances (it IS a .standard-sidebar-item) */
+.body-sidebar .app-switcher-dropdown .standard-sidebar-item,
+.body-sidebar .app-switcher-dropdown .standard-sidebar-item:hover {
+    background: transparent !important;
+    margin: 0 !important;
+    min-height: 0 !important;
+    height: auto !important;
+}
+.body-sidebar .app-switcher-dropdown .standard-sidebar-item::before {
+    display: none !important;
+    content: none !important;
+}
+.body-sidebar .app-switcher-dropdown .item-anchor::after {
+    display: none !important;
+    content: none !important;
+}
+/* stack logo + caption, centered */
+.body-sidebar .app-switcher-dropdown .d-flex {
+    flex-direction: column !important;
+    align-items: center !important;
+    text-align: center;
+    gap: 0;
+    height: auto !important;
+}
+/* logo: full wordmark at real aspect ratio, readable (was forced 32x32) */
+.body-sidebar .app-switcher-dropdown .app-logo-container {
+    background: transparent !important;
+    width: auto !important;
+    height: auto !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+}
+.body-sidebar .app-switcher-dropdown .app-logo {
+    width: auto !important;
+    height: 42px !important;
+    max-width: 200px;
+    object-fit: contain;
+}
+/* hide the duplicate org-name text (the logo wordmark already carries it) */
+.body-sidebar .app-switcher-dropdown .app-title {
+    display: none !important;
+}
+/* hide the app-switcher chevron entirely — banner, not a tab */
+.body-sidebar .app-switcher-dropdown .sidebar-item-control,
+.body-sidebar .app-switcher-dropdown .drop-icon {
+    display: none !important;
+}
+/* the tagline — injected by changemakers.js into the header .d-flex */
+.body-sidebar .app-switcher-dropdown .apf-prog-caption {
+    margin-top: 9px;
+    padding-top: 9px;
+    border-top: 1.5px solid var(--apf-blue-line);
+    width: 100%;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    color: var(--apf-deep);
+    line-height: 1.35;
+    white-space: normal;
+    text-align: center;
+}
+
 /* ===================== Scrolling: only when needed ===================== */
 /* flex child needs min-height:0 to actually scroll instead of overflowing */
 .body-sidebar .body-sidebar-top {

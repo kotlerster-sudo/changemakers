@@ -72,11 +72,11 @@ fixtures = [
 
 # Includes in <head>
 # ------------------
-app_include_js = "/assets/changemakers/js/changemakers.js?v=4"
+app_include_js = "/assets/changemakers/js/changemakers.js?v=5"
 
 # APF Operational Programs sidebar theme — desk sidebar restyle (2026-06-25).
 # Reversible: delete this line and redeploy to fully revert the look.
-app_include_css = "/assets/changemakers/css/apf_sidebar.css?v=4"
+app_include_css = "/assets/changemakers/css/apf_sidebar.css?v=5"
 
 # Generic Entitlement API — whitelisted for Flutter
 override_whitelisted_methods = {
