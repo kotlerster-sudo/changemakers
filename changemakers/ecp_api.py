@@ -18,6 +18,8 @@ def get_ecp_filter_options(implementing_org=None, cluster=None):
         filters["implementing_org"] = implementing_org
     if cluster:
         filters["cluster"] = cluster
+    # Restrict to active-programme IUs only (drop No / not-for-Phase-1 settlements)
+    filters["settlement_selection_status"] = ["not in", ["No", "Yes, but not for Phase 1"]]
 
     rows = frappe.get_all(
         "Street List  - WRP",
@@ -50,6 +52,8 @@ def get_ecp_coverage(implementing_org=None, cluster=None, intervention_unit=None
         street_filters["cluster"] = cluster
     if intervention_unit:
         street_filters["intervention_units"] = intervention_unit
+    # Restrict to active-programme IUs only (drop No / not-for-Phase-1 settlements)
+    street_filters["settlement_selection_status"] = ["not in", ["No", "Yes, but not for Phase 1"]]
 
     streets = frappe.get_all(
         "Street List  - WRP",
