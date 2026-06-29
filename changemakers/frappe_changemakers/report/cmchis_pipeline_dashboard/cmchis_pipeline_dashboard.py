@@ -139,11 +139,10 @@ def get_data(filters, group_by):
             iu.implementing_org         AS iu_org,
             co_staff.full_name          AS co_name,
             pm_staff.full_name          AS pm_name
-        FROM `tabIndividual Profile-WRP` ind
-        INNER JOIN `tabHousehold Profile-WRP` hh
-            ON hh.name = ind.hhid
-           AND hh.survay_status    = 'Occupied/உள்ளனர்'
-           AND hh.availability_for = 'Going Ahead/துவங்கலாம்'
+        FROM `tabHousehold Profile-WRP` hh
+        LEFT JOIN `tabIndividual Profile-WRP` ind
+            ON ind.hhid = hh.name
+           AND ind.status = 'Active- ஆக்டிவ்'
         LEFT JOIN `tabStreet List  - WRP` sl
             ON sl.name = hh.street_name
         LEFT JOIN `tabIntervention Units-WRP` iu
@@ -157,7 +156,8 @@ def get_data(filters, group_by):
               AND current_employee_status != 'Inactive'
             GROUP BY organisation
         ) pm_staff ON pm_staff.organisation = iu.implementing_org
-        WHERE ind.status = 'Active- ஆக்டிவ்'
+        WHERE hh.survay_status    = 'Occupied/உள்ளனர்'
+          AND hh.availability_for = 'Going Ahead/துவங்கலாம்'
               {cond}
         """.format(cond=cond),
         vals,
@@ -190,17 +190,20 @@ def get_data(filters, group_by):
                 "members":    [],
             }
             hh_order.append(hhid)
-        hh_map[hhid]["members"].append({
-            "aadhaar_status": r.get("aadhaar_status"),
-            "income_status":  r.get("income_status"),
-            "visit_count":    r.get("visit_count"),
-        })
+        # Household-driven LEFT JOIN: a household with no active member yields a
+        # single row with ind_id NULL — keep the household but add no member.
+        if r.get("ind_id"):
+            hh_map[hhid]["members"].append({
+                "aadhaar_status": r.get("aadhaar_status"),
+                "income_status":  r.get("income_status"),
+                "visit_count":    r.get("visit_count"),
+            })
 
     # ── Step 2: classify each household ───────────────────────────────────────
     for hhid in hh_order:
         hh = hh_map[hhid]
         members = hh["members"]
-        max_visits = max(int(m.get("visit_count") or 0) for m in members)
+        max_visits = max((int(m.get("visit_count") or 0) for m in members), default=0)
         bucket = _hh_bucket(hh["hh_cmchis"], max_visits, members)
         gap = _hh_doc_gap(members) if bucket == "no_update" else None
         hh["bucket"] = bucket
