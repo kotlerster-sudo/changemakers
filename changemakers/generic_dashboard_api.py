@@ -907,20 +907,32 @@ def get_implementing_orgs(entitlement_code):
 def maybe_escalate_for_ac_review(entitlement_code, beneficiary_id, visit_count, bucket):
     """
     If a beneficiary in docs_in_progress reaches 3 visits, auto-create a
-    Generic AC Review record if one doesn't already exist.
+    Generic AC Review record — but only ONE per beneficiary+entitlement, ever.
+
     Called from save_beneficiary_status after save.
+
+    Note: the guard checks for an existing review in ANY status, not just
+    "Pending AC Review". The old behaviour only skipped while a review was
+    still pending, so once the AC resolved one (Cleared/Blocked/Closed), the
+    next CO visit created a fresh duplicate and the same beneficiary kept
+    reappearing in the AC queue after being closed. Now an existing review is
+    reused: we refresh its visit count for context and never open a second.
+    The AC's outcome stands; if it needs revisiting the AC reopens it manually.
     """
     if bucket != "docs_in_progress":
         return
     if int(visit_count) < 3:
         return
 
-    existing = frappe.db.exists(
+    existing = frappe.db.get_value(
         "Generic AC Review",
-        {"entitlement": entitlement_code, "beneficiary": beneficiary_id,
-         "status": "Pending AC Review"},
+        {"entitlement": entitlement_code, "beneficiary": beneficiary_id},
+        "name",
     )
     if existing:
+        frappe.db.set_value(
+            "Generic AC Review", existing, "visit_count", int(visit_count)
+        )
         return
 
     b = frappe.db.get_value(
