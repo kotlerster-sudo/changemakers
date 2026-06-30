@@ -14,7 +14,12 @@ def _user_org_filter():
 # ── Household-level classification ───────────────────────────────────────────
 
 AADHAAR_RECEIVED = "Aadhaar Received"
-INCOME_READY = {"Income Cert Received", "Income Cert Expired"}
+# Only a valid (current) income certificate counts as ready. An EXPIRED cert is
+# not usable for a CMCHIS application — the household needs to renew it — so it
+# must NOT classify them as "Ready to Apply". This also keeps the dashboard in
+# sync with the field app (flutter_api uses `"Received" in income_status`, which
+# already excludes "Income Cert Expired").
+INCOME_READY = {"Income Cert Received"}
 
 
 def _hh_closer(members):
