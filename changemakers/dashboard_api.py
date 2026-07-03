@@ -96,7 +96,9 @@ def get_dashboard_overview(filters=None):
     """, sv, as_dict=True)[0]
     acs = int(struct.acs or 0)
 
-    # PM count still requires a role lookup (no pm field on Street List)
+    # PM count comes from Staff details (no pm field on Street List).
+    # Count actual on-roll Project Managers by designation — NOT WRP-PM role
+    # holders, which include MIS coordinators/ACs and inflate the number.
     def _pm_count():
         known_orgs = list({
             v for k, v in sv.items()
@@ -104,20 +106,20 @@ def get_dashboard_overview(filters=None):
         })
         if len(known_orgs) == 1:
             r = frappe.db.sql("""
-                SELECT COUNT(DISTINCT hr.parent) AS cnt
-                FROM `tabHas Role` hr
-                JOIN `tabStaff details - WRP` sd ON sd.mail_id = hr.parent
-                WHERE hr.role = 'WRP-PM' AND hr.parenttype = 'User'
+                SELECT COUNT(DISTINCT sd.name) AS cnt
+                FROM `tabStaff details - WRP` sd
+                WHERE sd.designation = 'Project Manager'
+                  AND sd.current_employee_status = 'On Roll'
                   AND TRIM(sd.organisation) = TRIM(%(org)s)
             """, {"org": known_orgs[0]}, as_dict=True)
         elif len(known_orgs) == 2 and known_orgs[0] != known_orgs[1]:
             return 0
         else:
             r = frappe.db.sql(f"""
-                SELECT COUNT(DISTINCT hr.parent) AS cnt
-                FROM `tabHas Role` hr
-                JOIN `tabStaff details - WRP` sd ON sd.mail_id = hr.parent
-                WHERE hr.role = 'WRP-PM' AND hr.parenttype = 'User'
+                SELECT COUNT(DISTINCT sd.name) AS cnt
+                FROM `tabStaff details - WRP` sd
+                WHERE sd.designation = 'Project Manager'
+                  AND sd.current_employee_status = 'On Roll'
                   AND sd.organisation IN (
                       SELECT DISTINCT sl.implementing_org
                       FROM `tabStreet List  - WRP` sl
