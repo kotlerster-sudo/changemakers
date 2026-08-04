@@ -186,7 +186,7 @@ def get_programme_overview(entitlement_code, geography=None,
                 "final_status", "visit_count", "last_visited_at",
                 "source_docname"],
     )
-    beneficiaries = _filter_active_beneficiaries(beneficiaries)
+    beneficiaries = _filter_active_beneficiaries(beneficiaries, entitlement_code)
 
     container_finals = {}
     if config["final_status_at"] == "Household":
@@ -361,7 +361,7 @@ def get_co_performance_table(entitlement_code, geography=None,
                 "final_status", "visit_count", "last_visited_at",
                 "source_docname"],
     )
-    beneficiaries = _filter_active_beneficiaries(beneficiaries)
+    beneficiaries = _filter_active_beneficiaries(beneficiaries, entitlement_code)
 
     container_finals = {}
     if config["final_status_at"] == "Household":
@@ -990,7 +990,7 @@ def get_org_progress_table(entitlement_code,
                 "final_status", "visit_count", "last_visited_at",
                 "source_docname"],
     )
-    beneficiaries = _filter_active_beneficiaries(beneficiaries)
+    beneficiaries = _filter_active_beneficiaries(beneficiaries, entitlement_code)
 
     # Resolve implementing_org per street
     streets = list({b.street for b in beneficiaries if b.street})
@@ -1088,7 +1088,7 @@ def get_bucket_drilldown(entitlement_code, bucket, co_id=None, geography=None,
             "source_docname",
         ],
     )
-    beneficiaries = _filter_active_beneficiaries(beneficiaries)
+    beneficiaries = _filter_active_beneficiaries(beneficiaries, entitlement_code)
 
     container_finals = {}
     if config["final_status_at"] == "Household":
@@ -1168,7 +1168,7 @@ def get_co_status_breakdown(entitlement_code, geography=None,
         fields=["name", "container", "street", "assigned_co",
                 "final_status", "visit_count", "source_docname"],
     )
-    beneficiaries = _filter_active_beneficiaries(beneficiaries)
+    beneficiaries = _filter_active_beneficiaries(beneficiaries, entitlement_code)
 
     container_finals = {}
     if config["final_status_at"] == "Household":

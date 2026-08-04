@@ -21,6 +21,11 @@ from collections import defaultdict
 # from OAP counts even though the record persists.
 IND_ACTIVE_STATUS = "Active- ஆக்டிவ்"
 
+# Minimum live age per entitlement. A beneficiary whose Individual Profile DOB was
+# corrected after enrolment (dropping them below the threshold) must vanish from
+# workplans and counts even though the Generic Beneficiary record persists.
+ENTITLEMENT_MIN_AGE = {"E2": 60}
+
 
 def _get_active_individual_names():
     """Set of all currently-Active Individual Profile-WRP names, cast to str.
@@ -37,15 +42,25 @@ def _get_active_individual_names():
         rows = frappe.get_all(
             "Individual Profile-WRP",
             filters={"status": IND_ACTIVE_STATUS},
-            pluck="name",
+            fields=["name", "dob"],
         )
-        frappe.local._active_ind_names = {str(r) for r in rows}
+        frappe.local._active_ind_names = {str(r.name) for r in rows}
+        frappe.local._active_ind_dobs = {str(r.name): r.dob for r in rows if r.dob}
     return frappe.local._active_ind_names
 
 
-def _filter_active_beneficiaries(beneficiaries):
-    """Drop beneficiaries whose source Individual Profile-WRP is no longer Active.
+def _get_active_individual_dobs():
+    """{str(name): dob} for currently-Active individuals (cached per request)."""
+    _get_active_individual_names()
+    return getattr(frappe.local, "_active_ind_dobs", {})
+
+
+def _filter_active_beneficiaries(beneficiaries, entitlement_code=None):
+    """Drop beneficiaries whose source Individual Profile-WRP is no longer Active,
+    and — for age-gated entitlements (see ENTITLEMENT_MIN_AGE) — those whose live
+    DOB puts them below the threshold (DOB corrections after enrolment).
     Records with no source_docname are kept (defensive: don't silently lose data).
+    A missing DOB never excludes anyone.
 
     Fails OPEN if the active set is empty.
     """
@@ -55,11 +70,25 @@ def _filter_active_beneficiaries(beneficiaries):
             "_filter_active_beneficiaries: active set empty — filter disabled"
         )
         return list(beneficiaries)
+
+    min_age = ENTITLEMENT_MIN_AGE.get(entitlement_code)
+    dob_cutoff = None
+    if min_age:
+        from frappe.utils import add_years
+        # Born AFTER this date => younger than min_age today.
+        dob_cutoff = getdate(add_years(nowdate(), -min_age))
+        dobs = _get_active_individual_dobs()
+
     out = []
     for b in beneficiaries:
         src = b.get("source_docname") if isinstance(b, dict) else getattr(b, "source_docname", None)
-        if not src or str(src) in active:
-            out.append(b)
+        if src and str(src) not in active:
+            continue
+        if src and dob_cutoff:
+            dob = dobs.get(str(src))
+            if dob and getdate(dob) > dob_cutoff:
+                continue
+        out.append(b)
     return out
 
 
@@ -328,7 +357,7 @@ def get_daily_workplan_v2(entitlement_code, co_id=None, date=None, force_refresh
                 "final_status", "visit_count", "last_visited_at",
                 "login_phone", "can_id", "source_docname"],
     )
-    beneficiaries = _filter_active_beneficiaries(beneficiaries)
+    beneficiaries = _filter_active_beneficiaries(beneficiaries, entitlement_code)
 
     # Get container final statuses if needed
     container_finals = {}
@@ -829,7 +858,7 @@ def get_co_performance_v2(entitlement_code, co_id=None):
                 "final_status", "visit_count", "last_visited_at",
                 "source_docname"],
     )
-    beneficiaries = _filter_active_beneficiaries(beneficiaries)
+    beneficiaries = _filter_active_beneficiaries(beneficiaries, entitlement_code)
 
     container_finals = {}
     if config["final_status_at"] == "Household":
@@ -1039,7 +1068,7 @@ def get_entitlement_history(entitlement_code, co_id=None):
         order_by="last_visited_at desc",
         limit=300,
     )
-    rows = _filter_active_beneficiaries(rows)
+    rows = _filter_active_beneficiaries(rows, entitlement_code)
 
     return {
         "history": [
