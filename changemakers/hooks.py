@@ -101,6 +101,14 @@ override_whitelisted_methods = {
     "changemakers.generic_dashboard_api.update_ac_review":           "changemakers.generic_dashboard_api.update_ac_review",
     "changemakers.generic_dashboard_api.get_update_rate_by_co":      "changemakers.generic_dashboard_api.get_update_rate_by_co",
     "changemakers.generic_dashboard_api.get_bucket_drilldown":        "changemakers.generic_dashboard_api.get_bucket_drilldown",
+    "changemakers.pm_dashboard_api.get_overview":            "changemakers.pm_dashboard_api.get_overview",
+    "changemakers.pm_dashboard_api.get_entitlements_view":   "changemakers.pm_dashboard_api.get_entitlements_view",
+    "changemakers.pm_dashboard_api.get_elderly_view":        "changemakers.pm_dashboard_api.get_elderly_view",
+    "changemakers.pm_dashboard_api.get_performance_view":    "changemakers.pm_dashboard_api.get_performance_view",
+    "changemakers.pm_dashboard_api.get_blockers_view":       "changemakers.pm_dashboard_api.get_blockers_view",
+    "changemakers.pm_dashboard_api.get_drilldown_unified":   "changemakers.pm_dashboard_api.get_drilldown_unified",
+    "changemakers.pm_dashboard_api.save_blocker_note":       "changemakers.pm_dashboard_api.save_blocker_note",
+    "changemakers.pm_dashboard_api.get_filter_meta":         "changemakers.pm_dashboard_api.get_filter_meta",
 }
 
 website_route_rules = [
