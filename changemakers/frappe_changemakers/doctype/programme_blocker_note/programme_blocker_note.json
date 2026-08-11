@@ -1,0 +1,43 @@
+{
+ "actions": [],
+ "autoname": "format:BLK-{entitlement_code}-{month}",
+ "creation": "2026-08-11 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "entitlement_code",
+  "month",
+  "column_break_1",
+  "resolved",
+  "resolved_at",
+  "section_break_1",
+  "blocker_text",
+  "owner_action"
+ ],
+ "fields": [
+  {"fieldname": "entitlement_code", "fieldtype": "Link", "label": "Entitlement", "options": "Entitlement Config", "reqd": 1, "in_list_view": 1, "in_standard_filter": 1},
+  {"fieldname": "month", "fieldtype": "Date", "label": "Month (first day)", "reqd": 1, "in_list_view": 1, "in_standard_filter": 1, "description": "Auto-normalised to first day of the month."},
+  {"fieldname": "column_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "resolved", "fieldtype": "Check", "label": "Resolved", "in_list_view": 1, "default": "0"},
+  {"fieldname": "resolved_at", "fieldtype": "Datetime", "label": "Resolved At", "read_only": 1},
+  {"fieldname": "section_break_1", "fieldtype": "Section Break"},
+  {"fieldname": "blocker_text", "fieldtype": "Small Text", "label": "Blocker (what's stuck)", "reqd": 1, "description": "PM-authored — overrides the auto-derived blocker text on the dashboard."},
+  {"fieldname": "owner_action", "fieldtype": "Small Text", "label": "Owner / Action", "description": "Who's picking this up and what's the next move."}
+ ],
+ "links": [],
+ "modified": "2026-08-11 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Changemakers",
+ "name": "Programme Blocker Note",
+ "owner": "Administrator",
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "report": 1, "print": 1, "share": 1, "email": 1},
+  {"role": "WRP-PM", "read": 1, "write": 1, "create": 1, "delete": 1, "export": 1, "report": 1, "print": 1, "share": 1, "email": 1},
+  {"role": "Program Manager", "read": 1, "write": 1, "create": 1, "export": 1, "report": 1, "print": 1, "share": 1, "email": 1},
+  {"role": "WRP-AC", "read": 1, "report": 1, "print": 1, "share": 1, "email": 1, "export": 1},
+  {"role": "WRP-MIS", "read": 1, "report": 1, "print": 1, "share": 1, "email": 1, "export": 1}
+ ],
+ "sort_field": "month",
+ "sort_order": "DESC",
+ "track_changes": 1
+}
