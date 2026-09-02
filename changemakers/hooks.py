@@ -72,7 +72,11 @@ fixtures = [
 
 # Includes in <head>
 # ------------------
-app_include_js = "/assets/changemakers/js/changemakers.js?v=5"
+app_include_js = [
+    "/assets/changemakers/js/changemakers.js?v=5",
+    # DPDP export control (3-Sep-2026): notice + one-line reason before any export; remove this line to revert
+    "/assets/changemakers/js/dpdp_export.js?v=1",
+]
 
 # APF Operational Programs sidebar theme — desk sidebar restyle (2026-06-25).
 # Reversible: delete this line and redeploy to fully revert the look.
@@ -80,6 +84,10 @@ app_include_css = "/assets/changemakers/css/apf_sidebar.css?v=5"
 
 # Generic Entitlement API — whitelisted for Flutter
 override_whitelisted_methods = {
+    # DPDP export control (3-Sep-2026): every export must carry a reason; System Managers exempt
+    "frappe.desk.reportview.export_query":                    "changemakers.dpdp_export.reportview_export_query",
+    "frappe.desk.query_report.export_query":                  "changemakers.dpdp_export.query_report_export_query",
+    "frappe.core.doctype.data_export.exporter.export_data":   "changemakers.dpdp_export.data_export_export_data",
     "changemakers.entitlement_api.get_co_schemes":            "changemakers.entitlement_api.get_co_schemes",
     "changemakers.entitlement_api.get_entitlement_config":   "changemakers.entitlement_api.get_entitlement_config",
     "changemakers.entitlement_api.get_daily_workplan_v2":    "changemakers.entitlement_api.get_daily_workplan_v2",
