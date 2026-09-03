@@ -191,10 +191,16 @@
 }
 
 /* ===================== Scrolling: only when needed ===================== */
-/* flex child needs min-height:0 to actually scroll instead of overflowing */
+/* flex child needs min-height:0 to actually scroll instead of overflowing.
+   Frappe v16 ships .body-sidebar-top with overflow-y:hidden, so a long/expanded
+   workspace tree was simply clipped — the bottom items were unreachable
+   unless you collapsed a group. (reported 3-Sep-2026) */
 .body-sidebar .body-sidebar-top {
     min-height: 0;
     flex: 1 1 auto;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
 }
 .body-sidebar .body-sidebar-top::-webkit-scrollbar {
     width: 7px;

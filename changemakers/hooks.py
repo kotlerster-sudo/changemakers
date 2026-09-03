@@ -80,7 +80,7 @@ app_include_js = [
 
 # APF Operational Programs sidebar theme — desk sidebar restyle (2026-06-25).
 # Reversible: delete this line and redeploy to fully revert the look.
-app_include_css = "/assets/changemakers/css/apf_sidebar.css?v=5"
+app_include_css = "/assets/changemakers/css/apf_sidebar.css?v=6"
 
 # Generic Entitlement API — whitelisted for Flutter
 override_whitelisted_methods = {
