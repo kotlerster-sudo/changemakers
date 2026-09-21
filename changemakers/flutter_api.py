@@ -3,6 +3,33 @@ import json
 from frappe import _
 
 
+FIELD_APP_LOCK_MESSAGE = (
+    "Field app is terminated for now - Your cockpit is on the way - "
+    "we are migrating, stay tuned, more communication from your MIS coordinator."
+)
+
+
+def _field_app_locked():
+    """Reversible kill-switch for the field app, toggled via frappe.db.set_default
+    ('field_app_locked', '1' or '0'). No schema change; does not touch Cockpit."""
+    return frappe.db.get_default("field_app_locked") == "1"
+
+
+@frappe.whitelist()
+def get_field_app_lock():
+    frappe.only_for("System Manager")
+    return {"locked": _field_app_locked(), "message": FIELD_APP_LOCK_MESSAGE}
+
+
+@frappe.whitelist(methods=["POST"])
+def set_field_app_lock(locked):
+    frappe.only_for("System Manager")
+    value = "1" if str(locked).strip().lower() in ("1", "true", "yes", "on") else "0"
+    frappe.db.set_default("field_app_locked", value)
+    frappe.db.commit()
+    return {"locked": value == "1"}
+
+
 def _get_staff_member():
     """Returns the Staff details name for the current session user."""
     current_user = frappe.session.user
@@ -88,6 +115,9 @@ def get_daily_workplan(force_refresh=0):
         "daily_plan": [],
         "workplan": {"unvisited": [], "pending_docs": [], "ready_to_apply": [], "applied": [], "active": [], "rejected": []}
     }
+    if _field_app_locked():
+        payload["error_caught"] = FIELD_APP_LOCK_MESSAGE
+        return payload
     try:
         staff_member = _get_staff_member()
         if not staff_member:
@@ -384,6 +414,9 @@ def get_co_performance():
             "needs_both": [], "needs_only_income": [], "needs_only_aadhaar": [], "cmchis_action_required": []
         }
     }
+    if _field_app_locked():
+        payload["error_caught"] = FIELD_APP_LOCK_MESSAGE
+        return payload
     try:
         staff_member = _get_staff_member()
         if not staff_member:
@@ -520,6 +553,9 @@ def get_co_household_list():
       - funnel_buckets: grouped by process stage (aadhaar / income / cmchis / stuck / active)
       - history_feed: flat list of all individuals, used by the Activity History screen
     """
+    if _field_app_locked():
+        return {"visit_buckets": {}, "funnel_buckets": {}, "history_feed": [],
+                "error_caught": FIELD_APP_LOCK_MESSAGE}
     try:
         staff_member = _get_staff_member()
         if not staff_member:
@@ -668,6 +704,8 @@ def save_cmchis_status(hhid, status):
     Save cmchis_status on a Household Profile-WRP record.
     Accepts exact option values or common aliases (case-insensitive).
     """
+    if _field_app_locked():
+        return {"error": FIELD_APP_LOCK_MESSAGE}
     normalised = _CMCHIS_ALIASES.get((status or "").strip().lower())
     if not normalised:
         if status in _VALID_CMCHIS:
@@ -741,6 +779,9 @@ def bulk_update_status(records):
     Returns counts of updated/skipped rows.
     """
     import json
+    if _field_app_locked():
+        return {"error": FIELD_APP_LOCK_MESSAGE, "ind_updated": 0, "hh_updated": 0,
+                "ind_skipped": 0, "hh_skipped": 0, "errors": [FIELD_APP_LOCK_MESSAGE]}
     if isinstance(records, str):
         records = json.loads(records)
 

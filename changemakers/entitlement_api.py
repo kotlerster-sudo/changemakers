@@ -15,6 +15,7 @@ import frappe
 from frappe.utils import getdate, nowdate, now_datetime
 import json
 from collections import defaultdict
+from changemakers.flutter_api import _field_app_locked, FIELD_APP_LOCK_MESSAGE
 
 # Individual Profile-WRP.status value indicating a person still resides at the address.
 # Anything else (e.g. moved out) means the linked Generic Beneficiary must be excluded
@@ -322,6 +323,8 @@ def get_daily_workplan_v2(entitlement_code, co_id=None, date=None, force_refresh
 
     Cached per co+date in Redis. force_refresh=1 busts the cache.
     """
+    if _field_app_locked():
+        return {"error": FIELD_APP_LOCK_MESSAGE}
     if not co_id:
         co_id = frappe.db.get_value(
             "Staff details - WRP", {"mail_id": frappe.session.user}, "name"
@@ -513,6 +516,8 @@ def save_beneficiary_status(
     doc_slot + new_status: legacy single-slot update (backward compat).
     final_status: update the final status (at container or individual level).
     """
+    if _field_app_locked():
+        return {"error": FIELD_APP_LOCK_MESSAGE}
     config = _load_config(entitlement_code)
     beneficiary = frappe.get_doc("Generic Beneficiary", beneficiary_id)
     valid_slots = {s["slot_key"] for s in config["slots"]}
@@ -780,6 +785,16 @@ def get_co_schemes():
     Generic schemes (E2+) are included if the CO has assigned beneficiaries.
     Flutter uses `type` to route: "legacy" → old CMCHIS flow, "generic" → new flow.
     """
+    if _field_app_locked():
+        # The home screen only renders scheme cards, so the lock notice is served
+        # as the single card; tapping it lands on the (also locked) workplan screen.
+        return {"schemes": [{
+            "code": "LOCK",
+            "name": FIELD_APP_LOCK_MESSAGE,
+            "type": "legacy",
+            "description": "",
+            "total": 0,
+        }]}
     co = frappe.db.get_value(
         "Staff details - WRP", {"mail_id": frappe.session.user}, "name"
     )
@@ -832,6 +847,8 @@ def get_co_performance_v2(entitlement_code, co_id=None):
     Returns bucket counts, saturation %, coverage %, drilldown lists,
     and pending_actions (slot-combination groups for actionable work).
     """
+    if _field_app_locked():
+        return {"error": FIELD_APP_LOCK_MESSAGE}
     if not co_id:
         co_id = frappe.db.get_value(
             "Staff details - WRP", {"mail_id": frappe.session.user}, "name"
@@ -984,6 +1001,8 @@ def get_co_performance_v2(entitlement_code, co_id=None):
 @frappe.whitelist()
 def get_beneficiary_detail(beneficiary_id):
     """Full beneficiary profile for the detail screen (includes identity and address fields)."""
+    if _field_app_locked():
+        return {"error": FIELD_APP_LOCK_MESSAGE}
     b = frappe.get_doc("Generic Beneficiary", beneficiary_id)
 
     # Resolve address and registered phone via source_docname → Individual → Household
@@ -1040,6 +1059,8 @@ def get_entitlement_history(entitlement_code, co_id=None):
     All visited beneficiaries for this entitlement/CO, sorted by last visit descending.
     Used by the history screen.
     """
+    if _field_app_locked():
+        return {"error": FIELD_APP_LOCK_MESSAGE}
     if not co_id:
         co_id = frappe.db.get_value(
             "Staff details - WRP", {"mail_id": frappe.session.user}, "name"
@@ -1155,6 +1176,8 @@ def delete_beneficiary_attachment(file_doc_name, beneficiary_id=None, source="le
     source='vault' removes the Document Vault Item from Individual Profile-WRP;
     source='legacy' (default for backward compat) deletes the File row directly.
     """
+    if _field_app_locked():
+        return {"error": FIELD_APP_LOCK_MESSAGE}
     if source == "vault" and beneficiary_id:
         individual_id = frappe.db.get_value(
             "Generic Beneficiary", beneficiary_id, "source_docname"
@@ -1185,6 +1208,8 @@ def upload_beneficiary_file(beneficiary_id, file_name, file_data, doc_category=N
 
     doc_category: optional label (e.g. 'Aadhaar', 'Ration Card', 'Bank Statement').
     """
+    if _field_app_locked():
+        return {"error": FIELD_APP_LOCK_MESSAGE}
     import base64
     raw = base64.b64decode(file_data)
 
@@ -1246,6 +1271,8 @@ def update_beneficiary_profile(
     ration_card_number=None,
 ):
     """Update identity fields without incrementing visit count."""
+    if _field_app_locked():
+        return {"error": FIELD_APP_LOCK_MESSAGE}
     b = frappe.get_doc("Generic Beneficiary", beneficiary_id)
     if login_phone is not None:
         b.login_phone = login_phone
