@@ -190,6 +190,22 @@
     text-align: center;
 }
 
+/* collapsed sidebar (~50px, class set by changemakers.js): keep the banner inside
+   the sidebar — logo shrinks to fit, caption hidden (25-Sep-2026) */
+.body-sidebar.apf-narrow .app-switcher-dropdown {
+    margin: 6px 3px !important;
+    padding: 6px 3px !important;
+    overflow: hidden !important;
+}
+.body-sidebar.apf-narrow .app-switcher-dropdown .apf-prog-caption {
+    display: none !important;
+}
+.body-sidebar.apf-narrow .app-switcher-dropdown .app-logo {
+    height: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+}
+
 /* ===================== Scrolling: only when needed ===================== */
 /* flex child needs min-height:0 to actually scroll instead of overflowing.
    Frappe v16 ships .body-sidebar-top with overflow-y:hidden, so a long/expanded

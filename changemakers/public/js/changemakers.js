@@ -110,9 +110,29 @@ function injectNeonDarkTheme() {
         el.textContent = CAPTION;
         tc.appendChild(el);
     }
+    // Collapsed sidebar (~50px): mark it apf-narrow so apf_sidebar.css shrinks the
+    // logo to fit and hides the caption; otherwise they spill over the page title
+    // (25-Sep-2026). The same fix ran live from the "MIS Sidebar Behaviour" block.
+    var narrowWatched = false;
+    function markNarrow() {
+        var sb = document.querySelector(".body-sidebar");
+        if (sb) sb.classList.toggle("apf-narrow", sb.getBoundingClientRect().width < 120);
+    }
+    function watchNarrow() {
+        if (narrowWatched || !window.ResizeObserver) return;
+        var sb = document.querySelector(".body-sidebar");
+        if (!sb) return;
+        narrowWatched = true;
+        markNarrow();
+        new ResizeObserver(markNarrow).observe(sb);
+    }
     function start() {
         ensureCaption();
-        new MutationObserver(ensureCaption).observe(document.body, {
+        watchNarrow();
+        new MutationObserver(function () {
+            ensureCaption();
+            watchNarrow();
+        }).observe(document.body, {
             childList: true,
             subtree: true,
         });
