@@ -77,7 +77,7 @@ app_include_js = [
     # DPDP export control (3-Sep-2026): notice + one-line reason before any export; remove this line to revert
     "/assets/changemakers/js/dpdp_export.js?v=1",
     # Cockpit arriving banner + sidebar countdown (28-Sep-2026, stops itself 12 h after Wed 30-Sep 09:30); remove this line to revert
-    "/assets/changemakers/js/cockpit_arriving.js?v=2",
+    "/assets/changemakers/js/cockpit_arriving.js?v=3",
 ]
 
 # APF Operational Programs sidebar theme — desk sidebar restyle (2026-06-25).

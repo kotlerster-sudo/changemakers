@@ -3,7 +3,7 @@
 // Banner: on the 1st, 4th, 7th … fresh visit (a "login"), or when 2 hours or more have passed since it last showed.
 // Sidebar row: always, above the sidebar items; tap it to open the banner again.
 // After the opening the sidebar row says "open now" for 12 hours, then this file does nothing.
-// Preview for anyone: add ?ck_arriving=co (or ac / pm / mis) to any /app URL.
+// Preview for anyone: add ?ck_arriving=co (or ac / pm / mis) to any /app URL; it stays for the browser session (?ck_arriving=off ends it).
 // Revert: remove the cockpit_arriving.js line from app_include_js in hooks.py and redeploy.
 (function () {
 	const LAUNCH = Date.parse("2026-09-30T09:30:00+05:30");
@@ -39,6 +39,15 @@
 		},
 	};
 
+	// preview flag: read at load (before the desk router can drop the query) and kept for this browser session
+	const PREVIEW = (function () {
+		const m = /[?&]ck_arriving=(co|ac|pm|mis|off)/.exec(location.search);
+		try {
+			if (m) { if (m[1] === "off") sessionStorage.removeItem("ckarr_preview"); else sessionStorage.setItem("ckarr_preview", m[1]); }
+			return sessionStorage.getItem("ckarr_preview");
+		} catch (e) { return m && m[1] !== "off" ? m[1] : null; }
+	})();
+
 	function ls(k, v) {
 		try {
 			if (v === undefined) return localStorage.getItem(k);
@@ -54,8 +63,7 @@
 
 	// which scope lines this user sees; null = not for this user
 	function audience() {
-		const m = /[?&]ck_arriving=(co|ac|pm|mis)/.exec(location.search);
-		if (m) return { co: "field", ac: "ac", pm: "lead", mis: "lead" }[m[1]];
+		if (PREVIEW) return { co: "field", ac: "ac", pm: "lead", mis: "lead" }[PREVIEW];
 		const r = frappe.user_roles || [];
 		if (r.indexOf("WRP - CO") > -1) return "field";
 		if (r.indexOf("WRP-AC") > -1) return "ac";
@@ -351,7 +359,7 @@
 
 	// ---------- show rule: every 3rd fresh visit, or 2 h since last shown ----------
 	function shouldShow() {
-		if (/[?&]ck_arriving=/.test(location.search)) return true;
+		if (PREVIEW) return true;
 		const key = "ckarr_" + frappe.session.user;
 		let st = {};
 		try { st = JSON.parse(ls(key) || "{}") || {}; } catch (e) { st = {}; }
